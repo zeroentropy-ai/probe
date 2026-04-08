@@ -1,0 +1,10 @@
+Meeting Notes - Sprint Planning 2026-04-01
+
+Discussed authentication migration timeline.
+Target: complete by end of Q2.
+Blockers: Auth0 contract renewal pending.
+
+Action items:
+- Review OAuth PKCE implementation (assigned: Alex)
+- Update API rate limiting to use sliding window (assigned: Jordan)
+- Write ADR for session storage migration (assigned: Sam)
