@@ -18,9 +18,10 @@ console = Console()
 PROBE_DIR_NAME = ".probe"
 
 
-def _find_probe_dir() -> Path:
+def _find_probe_dir(create: bool = False) -> Path:
     probe_dir = Path.cwd() / PROBE_DIR_NAME
-    probe_dir.mkdir(exist_ok=True)
+    if create:
+        probe_dir.mkdir(exist_ok=True)
     return probe_dir
 
 
@@ -30,23 +31,32 @@ def _get_config() -> ProbeConfig:
 
 
 def _build_providers(config: ProbeConfig):
+    from probe.config import PROVIDER_ENV_VARS
     from probe.providers.base import EmbeddingProvider, RerankProvider
 
     embedding: EmbeddingProvider
     reranker: RerankProvider | None = None
 
+    env_var = PROVIDER_ENV_VARS.get(config.embedding_provider, "")
+    api_key = os.environ.get(env_var, "") if env_var else ""
+    if not api_key:
+        console.print(
+            f"[red]Error: {env_var} not set."
+            f" Required for {config.embedding_provider} embeddings.[/red]"
+        )
+        sys.exit(1)
+
     if config.embedding_provider == "zeroentropy":
         from probe.providers.zeroentropy import ZeroEntropyEmbedding
-        embedding = ZeroEntropyEmbedding(os.environ.get("ZEROENTROPY_API_KEY", ""),
-                                         config.embedding_model, config.embedding_dimensions)
+        embedding = ZeroEntropyEmbedding(
+            api_key, config.embedding_model, config.embedding_dimensions,
+        )
     elif config.embedding_provider == "openai":
         from probe.providers.openai import OpenAIEmbedding
-        embedding = OpenAIEmbedding(os.environ.get("OPENAI_API_KEY", ""),
-                                    config.embedding_model, config.embedding_dimensions)
+        embedding = OpenAIEmbedding(api_key, config.embedding_model, config.embedding_dimensions)
     elif config.embedding_provider == "cohere":
         from probe.providers.cohere import CohereEmbedding
-        embedding = CohereEmbedding(os.environ.get("COHERE_API_KEY", ""),
-                                    config.embedding_model, config.embedding_dimensions)
+        embedding = CohereEmbedding(api_key, config.embedding_model, config.embedding_dimensions)
     else:
         console.print(f"[red]Unknown embedding provider: {config.embedding_provider}[/red]")
         sys.exit(1)
@@ -85,7 +95,7 @@ def index(paths, full):
         paths = (".",)
 
     config = _get_config()
-    probe_dir = _find_probe_dir()
+    probe_dir = _find_probe_dir(create=True)
     db = ProbeDB(probe_dir / "probe.db")
     db.initialize()
 
@@ -232,7 +242,7 @@ def config():
 @main.command()
 def init():
     """Interactive setup: choose providers and configure API keys."""
-    probe_dir = _find_probe_dir()
+    probe_dir = _find_probe_dir(create=True)
 
     provider = detect_provider()
     if provider:

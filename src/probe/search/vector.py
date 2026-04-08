@@ -52,6 +52,17 @@ class VectorStore:
             if ids_path.exists():
                 self._ids = np.load(str(ids_path)).tolist()
 
+    def delete(self, chunk_ids: set[int]) -> None:
+        """Delete vectors by chunk IDs."""
+        if self._vectors is None or not chunk_ids:
+            return
+        keep = [i for i, cid in enumerate(self._ids) if cid not in chunk_ids]
+        if not keep:
+            self.clear()
+            return
+        self._vectors = self._vectors[keep]
+        self._ids = [self._ids[i] for i in keep]
+
     def clear(self) -> None:
         self._ids = []
         self._vectors = None

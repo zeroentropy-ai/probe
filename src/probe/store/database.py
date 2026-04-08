@@ -87,6 +87,14 @@ class ProbeDB:
         row = self.conn.execute("SELECT hash FROM files WHERE path = ?", (path,)).fetchone()
         return row["hash"] if row else None
 
+    def get_chunk_ids_for_file(self, path: str) -> list[int]:
+        """Get all chunk IDs belonging to a file."""
+        rows = self.conn.execute(
+            "SELECT c.id FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.path = ?",
+            (path,),
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def delete_file(self, path: str) -> None:
         self.conn.execute("DELETE FROM files WHERE path = ?", (path,))
         self.conn.commit()
@@ -105,8 +113,11 @@ class ProbeDB:
             (file_id, chunk_index, content, file_type, char_start, char_end,
              token_count, header_path, symbol_name, page_number),
         )
-        self.conn.commit()
         return cursor.lastrowid
+
+    def commit(self) -> None:
+        """Commit the current transaction."""
+        self.conn.commit()
 
     def get_chunk(self, chunk_id: int) -> dict | None:
         row = self.conn.execute(
@@ -126,15 +137,24 @@ class ProbeDB:
         return [dict(row) for row in rows]
 
     def search_fts(self, query: str, top_k: int = 30) -> list[dict]:
-        rows = self.conn.execute(
-            """SELECT chunks_fts.rowid as chunk_id, rank
-               FROM chunks_fts
-               WHERE chunks_fts MATCH ?
-               ORDER BY rank
-               LIMIT ?""",
-            (query, top_k),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        # Sanitize query: wrap each term in double quotes to escape FTS5 operators
+        sanitized = " ".join(
+            f'"{term}"' for term in query.split() if term.strip()
+        )
+        if not sanitized:
+            return []
+        try:
+            rows = self.conn.execute(
+                """SELECT chunks_fts.rowid as chunk_id, rank
+                   FROM chunks_fts
+                   WHERE chunks_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (sanitized, top_k),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except Exception:
+            return []
 
     def get_stats(self) -> dict:
         total_files = self.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]

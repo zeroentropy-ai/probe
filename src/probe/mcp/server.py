@@ -3,57 +3,123 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from probe.config import load_config
+from probe.config import ProbeConfig, load_config
+from probe.providers.base import EmbeddingProvider, RerankProvider
+from probe.search.engine import ContextEngine
 from probe.search.vector import VectorStore
 from probe.store.database import ProbeDB
 
 PROBE_DIR_NAME = ".probe"
 
 
-def _get_probe_dir() -> Path:
-    probe_dir = Path.cwd() / PROBE_DIR_NAME
-    probe_dir.mkdir(exist_ok=True)
-    return probe_dir
+class _ServerState:
+    """Lazy-initialized shared state for the MCP server."""
+
+    def __init__(self):
+        self._engine: ContextEngine | None = None
+        self._db: ProbeDB | None = None
+        self._config: ProbeConfig | None = None
+        self._project_root: Path = Path.cwd()
+
+    @property
+    def probe_dir(self) -> Path:
+        d = self._project_root / PROBE_DIR_NAME
+        d.mkdir(exist_ok=True)
+        return d
+
+    @property
+    def config(self) -> ProbeConfig:
+        if self._config is None:
+            self._config = load_config(self.probe_dir / "config.yaml")
+        return self._config
+
+    @property
+    def db(self) -> ProbeDB:
+        if self._db is None:
+            self._db = ProbeDB(self.probe_dir / "probe.db")
+            self._db.initialize()
+        return self._db
+
+    def get_engine(self) -> ContextEngine:
+        if self._engine is None:
+            vector_store = VectorStore(
+                self.probe_dir / "vectors.npy",
+                dimensions=self.config.embedding_dimensions,
+            )
+            vector_store.load()
+            embedding, reranker = _build_providers(self.config)
+            self._engine = ContextEngine(
+                db=self.db, vector_store=vector_store,
+                embedding_provider=embedding, rerank_provider=reranker,
+            )
+        return self._engine
+
+    def invalidate(self):
+        """Reset cached state after indexing changes."""
+        self._engine = None
+
+
+def _build_providers(config: ProbeConfig):
+    """Build providers from config (shared with CLI)."""
+    embedding: EmbeddingProvider
+    reranker: RerankProvider | None = None
+
+    if config.embedding_provider == "zeroentropy":
+        from probe.providers.zeroentropy import ZeroEntropyEmbedding
+        embedding = ZeroEntropyEmbedding(
+            os.environ.get("ZEROENTROPY_API_KEY", ""),
+            config.embedding_model, config.embedding_dimensions,
+        )
+    elif config.embedding_provider == "openai":
+        from probe.providers.openai import OpenAIEmbedding
+        embedding = OpenAIEmbedding(
+            os.environ.get("OPENAI_API_KEY", ""),
+            config.embedding_model, config.embedding_dimensions,
+        )
+    elif config.embedding_provider == "cohere":
+        from probe.providers.cohere import CohereEmbedding
+        embedding = CohereEmbedding(
+            os.environ.get("COHERE_API_KEY", ""),
+            config.embedding_model, config.embedding_dimensions,
+        )
+    else:
+        raise ValueError(f"Unknown embedding provider: {config.embedding_provider}")
+
+    if config.rerank_provider == "zeroentropy":
+        api_key = os.environ.get("ZEROENTROPY_API_KEY", "")
+        if api_key:
+            from probe.providers.zeroentropy import ZeroEntropyRerank
+            reranker = ZeroEntropyRerank(api_key, config.rerank_model)
+    elif config.rerank_provider == "cohere":
+        api_key = os.environ.get("COHERE_API_KEY", "")
+        if api_key:
+            from probe.providers.cohere import CohereRerank
+            reranker = CohereRerank(api_key, config.rerank_model)
+
+    return embedding, reranker
 
 
 def create_mcp_server() -> FastMCP:
     server = FastMCP("probe")
+    state = _ServerState()
 
     @server.tool()
-    def probe_search(query: str, top_k: int = 10, max_tokens: int = 4096,
-                     file_types: list[str] | None = None) -> str:
+    def probe_search(
+        query: str, top_k: int = 10, max_tokens: int = 4096,
+        file_types: list[str] | None = None,
+    ) -> str:
         """Search project knowledge (docs, specs, code) and return curated, reranked context.
         Use this when you need to understand how something works, find requirements,
         or locate relevant code and documentation."""
-        from probe.cli import _build_providers
-        from probe.search.engine import ContextEngine
-
-        probe_dir = _get_probe_dir()
-        config = load_config(probe_dir / "config.yaml")
-        db = ProbeDB(probe_dir / "probe.db")
-        db.initialize()
-        vector_store = VectorStore(
-            probe_dir / "vectors.npy",
-            dimensions=config.embedding_dimensions,
-        )
-        vector_store.load()
-
-        embedding, reranker = _build_providers(config)
-        engine = ContextEngine(
-            db=db, vector_store=vector_store,
-            embedding_provider=embedding, rerank_provider=reranker,
-        )
-
+        engine = state.get_engine()
         response = engine.search(
-            query=query, top_k=top_k,
-            max_tokens=max_tokens, file_types=file_types,
+            query=query, top_k=top_k, max_tokens=max_tokens, file_types=file_types,
         )
-        db.close()
-
         return json.dumps({
             "query": response.query,
             "results": [
@@ -71,35 +137,26 @@ def create_mcp_server() -> FastMCP:
     def probe_index(paths: list[str] | None = None, full: bool = False) -> str:
         """Index or re-index project files. Run this if you've added new docs
         or if search results seem stale."""
-        from probe.cli import _build_providers
         from probe.indexer.pipeline import IndexPipeline
 
-        probe_dir = _get_probe_dir()
-        config = load_config(probe_dir / "config.yaml")
-        db = ProbeDB(probe_dir / "probe.db")
-        db.initialize()
-
+        config = state.config
         embedding, _ = _build_providers(config)
         vector_store = VectorStore(
-            probe_dir / "vectors.npy",
-            dimensions=config.embedding_dimensions,
+            state.probe_dir / "vectors.npy", dimensions=config.embedding_dimensions,
         )
-
-        pipeline = IndexPipeline(db=db, vector_store=vector_store, embedding_provider=embedding)
+        pipeline = IndexPipeline(
+            db=state.db, vector_store=vector_store, embedding_provider=embedding,
+        )
         index_paths = [Path(p) for p in paths] if paths else [Path.cwd()]
         stats = pipeline.index(index_paths, full=full)
-        db.close()
+        state.invalidate()  # reset cached engine so next search picks up new data
         return json.dumps(stats)
 
     @server.tool()
     def probe_status() -> str:
         """Show indexing status: file counts, chunk counts, last indexed time, and providers."""
-        probe_dir = _get_probe_dir()
-        config = load_config(probe_dir / "config.yaml")
-        db = ProbeDB(probe_dir / "probe.db")
-        db.initialize()
-        stats = db.get_stats()
-        db.close()
+        config = state.config
+        stats = state.db.get_stats()
         return json.dumps({
             **stats, "providers": {
                 "embedding": f"{config.embedding_provider}/{config.embedding_model}",
@@ -112,8 +169,15 @@ def create_mcp_server() -> FastMCP:
         """Read the full content of an indexed file. Use after probe_search
         to get more context from a specific source."""
         target = Path(file_path)
-        if not target.exists():
+        if not target.is_absolute():
             target = Path.cwd() / file_path
+
+        # Security: restrict reads to the project directory
+        try:
+            target.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            return json.dumps({"error": "Access denied: path is outside project directory"})
+
         if not target.exists():
             return json.dumps({"error": f"File not found: {file_path}"})
         return target.read_text(encoding="utf-8", errors="replace")

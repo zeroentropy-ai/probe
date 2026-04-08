@@ -10,7 +10,7 @@ from probe.providers.base import EmbeddingProvider, RerankProvider
 
 
 class ZeroEntropyEmbedding(EmbeddingProvider):
-    def __init__(self, api_key: str, model: str = "zembed-1", dimensions: int = 1024):
+    def __init__(self, api_key: str, model: str = "zembed-1", dimensions: int = 1280):
         self._client = ZeroEntropy(api_key=api_key)
         self._model = model
         self._dimensions = dimensions

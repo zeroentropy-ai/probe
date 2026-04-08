@@ -29,6 +29,12 @@ class IndexPipeline:
         files_indexed = 0
         files_skipped = 0
         chunks_created = 0
+        new_chunk_texts: list[str] = []
+        new_chunk_ids: list[int] = []
+        deleted_chunk_ids: set[int] = set()
+
+        # Load existing vectors for incremental updates
+        self.vector_store.load()
 
         for file_path in files:
             file_hash = compute_file_hash(file_path)
@@ -46,6 +52,9 @@ class IndexPipeline:
                     files_skipped += 1
                     continue
 
+            # Track old chunk IDs for vector deletion
+            old_ids = self.db.get_chunk_ids_for_file(rel_path)
+            deleted_chunk_ids.update(old_ids)
             self.db.delete_file(rel_path)
 
             content = extract_content(file_path)
@@ -58,28 +67,33 @@ class IndexPipeline:
 
             file_id = self.db.add_file(rel_path, file_hash, file_type)
             for chunk in chunks:
-                self.db.add_chunk(
+                chunk_id = self.db.add_chunk(
                     file_id=file_id, chunk_index=chunk.chunk_index,
                     content=chunk.content, file_type=chunk.file_type,
                     char_start=chunk.char_start, char_end=chunk.char_end,
                     token_count=chunk.token_count, header_path=chunk.header_path,
                     symbol_name=chunk.symbol_name, page_number=chunk.page_number,
                 )
+                new_chunk_texts.append(chunk.content)
+                new_chunk_ids.append(chunk_id)
                 chunks_created += 1
+            self.db.commit()  # commit all chunks for this file atomically
             files_indexed += 1
 
-        # Re-embed ALL chunks to keep vectors in sync
-        all_db_chunks = self.db.get_all_chunks()
-        if all_db_chunks:
-            self.vector_store.clear()
-            all_texts = [c["content"] for c in all_db_chunks]
-            all_ids = [c["id"] for c in all_db_chunks]
+        # Remove vectors for deleted/changed files
+        if deleted_chunk_ids:
+            self.vector_store.delete(deleted_chunk_ids)
 
-            for i in range(0, len(all_texts), EMBED_BATCH_SIZE):
-                batch_texts = all_texts[i:i + EMBED_BATCH_SIZE]
-                batch_ids = all_ids[i:i + EMBED_BATCH_SIZE]
+        # Embed only new chunks
+        if new_chunk_texts:
+            for i in range(0, len(new_chunk_texts), EMBED_BATCH_SIZE):
+                batch_texts = new_chunk_texts[i:i + EMBED_BATCH_SIZE]
+                batch_ids = new_chunk_ids[i:i + EMBED_BATCH_SIZE]
                 vectors = self.embedding_provider.embed(batch_texts, input_type="document")
                 self.vector_store.add(batch_ids, vectors)
+
+        # Save if anything changed
+        if new_chunk_texts or deleted_chunk_ids:
             self.vector_store.save()
 
         return {
