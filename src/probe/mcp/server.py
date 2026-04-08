@@ -104,8 +104,24 @@ def _build_providers(config: ProbeConfig):
     return embedding, reranker
 
 
+MCP_INSTRUCTIONS = """Use this server to search project knowledge — documentation, design specs, \
+ADRs, runbooks, API references, and source code — using semantic search with reranking.
+
+ALWAYS use probe_search BEFORE reading individual files or grepping when you need to:
+- Understand how something works in the project
+- Find where a feature is documented or implemented
+- Answer questions about architecture, requirements, or design decisions
+- Locate relevant code and documentation for a task
+
+probe_search returns ranked results from docs AND code simultaneously, which is faster and \
+more accurate than manually grepping or reading files. It uses hybrid retrieval (keyword + \
+semantic) with cross-encoder reranking.
+
+Do not use for: writing new code, making edits, or tasks unrelated to understanding the project."""
+
+
 def create_mcp_server() -> FastMCP:
-    server = FastMCP("probe")
+    server = FastMCP("probe", instructions=MCP_INSTRUCTIONS)
     state = _ServerState()
 
     @server.tool()
