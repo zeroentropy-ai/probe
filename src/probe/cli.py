@@ -52,11 +52,15 @@ def _build_providers(config: ProbeConfig):
         sys.exit(1)
 
     if config.rerank_provider == "zeroentropy":
-        from probe.providers.zeroentropy import ZeroEntropyRerank
-        reranker = ZeroEntropyRerank(os.environ.get("ZEROENTROPY_API_KEY", ""), config.rerank_model)
+        api_key = os.environ.get("ZEROENTROPY_API_KEY", "")
+        if api_key:
+            from probe.providers.zeroentropy import ZeroEntropyRerank
+            reranker = ZeroEntropyRerank(api_key, config.rerank_model)
     elif config.rerank_provider == "cohere":
-        from probe.providers.cohere import CohereRerank
-        reranker = CohereRerank(os.environ.get("COHERE_API_KEY", ""), config.rerank_model)
+        api_key = os.environ.get("COHERE_API_KEY", "")
+        if api_key:
+            from probe.providers.cohere import CohereRerank
+            reranker = CohereRerank(api_key, config.rerank_model)
 
     return embedding, reranker
 
@@ -160,7 +164,7 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
         console.print()
 
     model_info = f"{config.embedding_model}"
-    if not no_rerank:
+    if not no_rerank and reranker is not None:
         model_info += f" + {config.rerank_model}"
     console.print(f" [dim]{'---' * 14}[/dim]")
     console.print(f" [dim]{model_info} | {response.total_tokens:,} tokens | {elapsed:.1f}s[/dim]\n")
