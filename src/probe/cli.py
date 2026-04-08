@@ -208,7 +208,7 @@ def list_files():
         return
 
     for f in files:
-        console.print(f"  [{f['file_type']}] {f['path']}")
+        console.print(f"  \\[{f['file_type']}] {f['path']}")
     console.print(f"\n[dim]{len(files)} files[/dim]")
     db.close()
 

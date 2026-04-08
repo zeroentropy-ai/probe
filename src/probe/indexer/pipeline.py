@@ -34,14 +34,11 @@ class IndexPipeline:
             file_hash = compute_file_hash(file_path)
             file_type = classify_file_type(file_path)
 
-            rel_path = str(file_path)
-            for p in paths:
-                if p.is_dir():
-                    try:
-                        rel_path = str(file_path.relative_to(p))
-                        break
-                    except ValueError:
-                        continue
+            # Make path relative to cwd for consistent storage
+            try:
+                rel_path = str(file_path.relative_to(Path.cwd()))
+            except ValueError:
+                rel_path = str(file_path)
 
             if not full:
                 existing_hash = self.db.get_file_hash(rel_path)

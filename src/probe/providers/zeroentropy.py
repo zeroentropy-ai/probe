@@ -23,7 +23,7 @@ class ZeroEntropyEmbedding(EmbeddingProvider):
         response = self._client.models.embed(
             model=self._model, input=texts, input_type=input_type, dimensions=self._dimensions,
         )
-        return np.array([item.embedding for item in response.data], dtype=np.float32)
+        return np.array([item.embedding for item in response.results], dtype=np.float32)
 
 
 class ZeroEntropyRerank(RerankProvider):

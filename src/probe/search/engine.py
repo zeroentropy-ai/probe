@@ -82,7 +82,7 @@ class ContextEngine:
         total_tokens = 0
         for chunk, score in candidates[:top_k]:
             chunk_tokens = len(_enc.encode(chunk["content"]))
-            if total_tokens + chunk_tokens > max_tokens:
+            if total_tokens + chunk_tokens > max_tokens and results:
                 break
             results.append(SearchResult(
                 score=round(score, 4), file=chunk["file_path"],

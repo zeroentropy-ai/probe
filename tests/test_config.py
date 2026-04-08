@@ -13,7 +13,7 @@ class TestConfig:
         config = ProbeConfig()
         assert config.embedding_provider == "zeroentropy"
         assert config.embedding_model == "zembed-1"
-        assert config.embedding_dimensions == 1024
+        assert config.embedding_dimensions == 1280
         assert config.rerank_provider == "zeroentropy"
         assert config.rerank_model == "zerank-2"
 

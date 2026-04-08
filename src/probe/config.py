@@ -29,7 +29,7 @@ class ProbeConfig:
 
     embedding_provider: str = "zeroentropy"
     embedding_model: str = "zembed-1"
-    embedding_dimensions: int = 1024
+    embedding_dimensions: int = 1280
     rerank_provider: str = "zeroentropy"
     rerank_model: str = "zerank-2"
 
@@ -72,7 +72,7 @@ def load_config(path: Path) -> ProbeConfig:
     return ProbeConfig(
         embedding_provider=embed.get("name", "zeroentropy"),
         embedding_model=embed.get("model", "zembed-1"),
-        embedding_dimensions=embed.get("dimensions", 1024),
+        embedding_dimensions=embed.get("dimensions", 1280),
         rerank_provider=rerank.get("name", "zeroentropy"),
         rerank_model=rerank.get("model", "zerank-2"),
     )
