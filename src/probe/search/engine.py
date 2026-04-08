@@ -15,8 +15,11 @@ RRF_K = 60
 
 
 class ContextEngine:
-    def __init__(self, db: ProbeDB, vector_store: VectorStore,
-                 embedding_provider: EmbeddingProvider, rerank_provider: RerankProvider | None = None):
+    def __init__(
+        self, db: ProbeDB, vector_store: VectorStore,
+        embedding_provider: EmbeddingProvider,
+        rerank_provider: RerankProvider | None = None,
+    ):
         self.db = db
         self.vector_store = vector_store
         self.embedding_provider = embedding_provider

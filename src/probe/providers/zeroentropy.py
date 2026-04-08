@@ -31,7 +31,9 @@ class ZeroEntropyRerank(RerankProvider):
         self._client = ZeroEntropy(api_key=api_key)
         self._model = model
 
-    def rerank(self, query: str, documents: list[str], top_n: int | None = None) -> list[RerankResult]:
+    def rerank(
+        self, query: str, documents: list[str], top_n: int | None = None,
+    ) -> list[RerankResult]:
         kwargs: dict = {"model": self._model, "query": query, "documents": documents}
         if top_n is not None:
             kwargs["top_n"] = top_n

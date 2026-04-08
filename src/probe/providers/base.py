@@ -26,5 +26,7 @@ class RerankProvider(ABC):
     """Base class for reranking providers."""
 
     @abstractmethod
-    def rerank(self, query: str, documents: list[str], top_n: int | None = None) -> list[RerankResult]:
+    def rerank(
+        self, query: str, documents: list[str], top_n: int | None = None,
+    ) -> list[RerankResult]:
         """Rerank documents by relevance to query. Returns sorted results."""

@@ -65,14 +65,23 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
             current = ""
             for para in paragraphs:
                 if current and len(current) + len(para) > 1800:
-                    chunks.append(_make_chunk(current.strip(), file_path, "markdown", len(chunks), start, header_path))
+                    chunks.append(_make_chunk(
+                        current.strip(), file_path, "markdown",
+                        len(chunks), start, header_path,
+                    ))
                     current = para
                 else:
                     current = f"{current}\n\n{para}" if current else para
             if current.strip():
-                chunks.append(_make_chunk(current.strip(), file_path, "markdown", len(chunks), start, header_path))
+                chunks.append(_make_chunk(
+                    current.strip(), file_path, "markdown",
+                    len(chunks), start, header_path,
+                ))
         else:
-            chunks.append(_make_chunk(section, file_path, "markdown", len(chunks), start, header_path))
+            chunks.append(_make_chunk(
+                section, file_path, "markdown",
+                len(chunks), start, header_path,
+            ))
 
     return chunks
 
@@ -115,7 +124,10 @@ def chunk_code(content: str, file_path: str) -> list[Chunk]:
                 sc.chunk_index = len(chunks)
                 chunks.append(sc)
         else:
-            chunks.append(_make_chunk(section, file_path, "code", len(chunks), start, symbol_name=symbol_name))
+            chunks.append(_make_chunk(
+                section, file_path, "code", len(chunks),
+                start, symbol_name=symbol_name,
+            ))
 
     return chunks
 
@@ -127,7 +139,10 @@ def chunk_pdf(content: str, file_path: str) -> list[Chunk]:
     for i, page in enumerate(pages):
         text = page.strip()
         if text:
-            chunks.append(_make_chunk(text, file_path, "pdf", len(chunks), char_offset, page_number=i + 1))
+            chunks.append(_make_chunk(
+                text, file_path, "pdf", len(chunks),
+                char_offset, page_number=i + 1,
+            ))
         char_offset += len(page) + len("--- PAGE BREAK ---")
     return chunks
 
@@ -161,7 +176,10 @@ def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200
         end = min(start + window_size, len(content))
         text = content[start:end]
         if text.strip():
-            chunks.append(_make_chunk(text, file_path, file_type, len(chunks), start, symbol_name=symbol_name))
+            chunks.append(_make_chunk(
+                text, file_path, file_type, len(chunks),
+                start, symbol_name=symbol_name,
+            ))
         if end >= len(content):
             break
         start = end - overlap

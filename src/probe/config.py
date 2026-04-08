@@ -8,7 +8,6 @@ from pathlib import Path
 
 import yaml
 
-
 PROVIDER_ENV_VARS = {
     "zeroentropy": "ZEROENTROPY_API_KEY",
     "openai": "OPENAI_API_KEY",

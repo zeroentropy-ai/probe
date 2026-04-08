@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 import probe
-from probe.config import ProbeConfig, detect_provider, load_config, save_config, DEFAULT_MODELS
+from probe.config import DEFAULT_MODELS, ProbeConfig, detect_provider, load_config, save_config
 
 console = Console()
 PROBE_DIR_NAME = ".probe"
@@ -217,7 +217,11 @@ def list_files():
 def config():
     """Show current provider configuration."""
     cfg = _get_config()
-    console.print(f"Embedding: [cyan]{cfg.embedding_provider}[/cyan] / {cfg.embedding_model} ({cfg.embedding_dimensions}d)")
+    dims = cfg.embedding_dimensions
+    console.print(
+        f"Embedding: [cyan]{cfg.embedding_provider}[/cyan]"
+        f" / {cfg.embedding_model} ({dims}d)"
+    )
     console.print(f"Reranker:  [cyan]{cfg.rerank_provider}[/cyan] / {cfg.rerank_model}")
 
 

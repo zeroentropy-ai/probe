@@ -36,14 +36,22 @@ def create_mcp_server() -> FastMCP:
         config = load_config(probe_dir / "config.yaml")
         db = ProbeDB(probe_dir / "probe.db")
         db.initialize()
-        vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
+        vector_store = VectorStore(
+            probe_dir / "vectors.npy",
+            dimensions=config.embedding_dimensions,
+        )
         vector_store.load()
 
         embedding, reranker = _build_providers(config)
-        engine = ContextEngine(db=db, vector_store=vector_store,
-                               embedding_provider=embedding, rerank_provider=reranker)
+        engine = ContextEngine(
+            db=db, vector_store=vector_store,
+            embedding_provider=embedding, rerank_provider=reranker,
+        )
 
-        response = engine.search(query=query, top_k=top_k, max_tokens=max_tokens, file_types=file_types)
+        response = engine.search(
+            query=query, top_k=top_k,
+            max_tokens=max_tokens, file_types=file_types,
+        )
         db.close()
 
         return json.dumps({
@@ -72,7 +80,10 @@ def create_mcp_server() -> FastMCP:
         db.initialize()
 
         embedding, _ = _build_providers(config)
-        vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
+        vector_store = VectorStore(
+            probe_dir / "vectors.npy",
+            dimensions=config.embedding_dimensions,
+        )
 
         pipeline = IndexPipeline(db=db, vector_store=vector_store, embedding_provider=embedding)
         index_paths = [Path(p) for p in paths] if paths else [Path.cwd()]

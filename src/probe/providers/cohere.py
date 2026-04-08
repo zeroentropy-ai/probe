@@ -35,7 +35,9 @@ class CohereRerank(RerankProvider):
         self._client = cohere.ClientV2(api_key=api_key)
         self._model = model
 
-    def rerank(self, query: str, documents: list[str], top_n: int | None = None) -> list[RerankResult]:
+    def rerank(
+        self, query: str, documents: list[str], top_n: int | None = None,
+    ) -> list[RerankResult]:
         response = self._client.rerank(
             model=self._model, query=query, documents=documents,
             top_n=top_n or len(documents),

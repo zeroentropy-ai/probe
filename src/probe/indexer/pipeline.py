@@ -15,7 +15,10 @@ EMBED_BATCH_SIZE = 96
 
 
 class IndexPipeline:
-    def __init__(self, db: ProbeDB, vector_store: VectorStore, embedding_provider: EmbeddingProvider):
+    def __init__(
+        self, db: ProbeDB, vector_store: VectorStore,
+        embedding_provider: EmbeddingProvider,
+    ):
         self.db = db
         self.vector_store = vector_store
         self.embedding_provider = embedding_provider
@@ -82,4 +85,8 @@ class IndexPipeline:
                 self.vector_store.add(batch_ids, vectors)
             self.vector_store.save()
 
-        return {"files_indexed": files_indexed, "files_skipped": files_skipped, "chunks_created": chunks_created}
+        return {
+            "files_indexed": files_indexed,
+            "files_skipped": files_skipped,
+            "chunks_created": chunks_created,
+        }
