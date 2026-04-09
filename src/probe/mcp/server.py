@@ -107,6 +107,10 @@ def _build_providers(config: ProbeConfig):
 MCP_INSTRUCTIONS = """Use this server to search project knowledge — documentation, design specs, \
 ADRs, runbooks, API references, and source code — using semantic search with reranking.
 
+IMPORTANT: On first use in a project, call probe_status first. If it shows 0 indexed files, \
+call probe_index to build the search index before searching. This only needs to happen once \
+per project.
+
 ALWAYS use probe_search BEFORE reading individual files or grepping when you need to:
 - Understand how something works in the project
 - Find where a feature is documented or implemented
@@ -132,6 +136,24 @@ def create_mcp_server() -> FastMCP:
         """Search project knowledge (docs, specs, code) and return curated, reranked context.
         Use this when you need to understand how something works, find requirements,
         or locate relevant code and documentation."""
+        # Auto-index if nothing is indexed yet
+        stats = state.db.get_stats()
+        if stats["total_files"] == 0:
+            from probe.indexer.pipeline import IndexPipeline
+
+            config = state.config
+            embedding, _ = _build_providers(config)
+            vector_store = VectorStore(
+                state.probe_dir / "vectors.npy",
+                dimensions=config.embedding_dimensions,
+            )
+            pipeline = IndexPipeline(
+                db=state.db, vector_store=vector_store,
+                embedding_provider=embedding,
+            )
+            pipeline.index([Path.cwd()])
+            state.invalidate()
+
         engine = state.get_engine()
         response = engine.search(
             query=query, top_k=top_k, max_tokens=max_tokens, file_types=file_types,
