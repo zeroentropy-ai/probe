@@ -29,12 +29,28 @@ class IndexPipeline:
         files_indexed = 0
         files_skipped = 0
         chunks_created = 0
+        files_removed = 0
         new_chunk_texts: list[str] = []
         new_chunk_ids: list[int] = []
         deleted_chunk_ids: set[int] = set()
 
         # Load existing vectors for incremental updates
         self.vector_store.load()
+
+        # Clean up files that no longer exist on disk
+        disk_rel_paths: set[str] = set()
+        for file_path in files:
+            try:
+                disk_rel_paths.add(str(file_path.relative_to(Path.cwd())))
+            except ValueError:
+                disk_rel_paths.add(str(file_path))
+
+        for db_file in self.db.list_files():
+            if db_file["path"] not in disk_rel_paths:
+                old_ids = self.db.get_chunk_ids_for_file(db_file["path"])
+                deleted_chunk_ids.update(old_ids)
+                self.db.delete_file(db_file["path"])
+                files_removed += 1
 
         for file_path in files:
             file_hash = compute_file_hash(file_path)

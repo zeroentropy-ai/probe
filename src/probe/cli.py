@@ -25,6 +25,17 @@ def _find_probe_dir(create: bool = False) -> Path:
     return probe_dir
 
 
+def _require_probe_dir() -> Path:
+    """Find .probe/ dir or exit with helpful message."""
+    probe_dir = Path.cwd() / PROBE_DIR_NAME
+    if not probe_dir.exists():
+        console.print(
+            "[yellow]Not indexed yet. Run 'probe index' first.[/yellow]"
+        )
+        raise SystemExit(0)
+    return probe_dir
+
+
 def _get_config() -> ProbeConfig:
     probe_dir = _find_probe_dir()
     return load_config(probe_dir / "config.yaml")
@@ -129,7 +140,7 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
     from probe.store.database import ProbeDB
 
     config = _get_config()
-    probe_dir = _find_probe_dir()
+    probe_dir = _require_probe_dir()
     db = ProbeDB(probe_dir / "probe.db")
     db.initialize()
     vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
@@ -186,7 +197,7 @@ def status():
     """Show index status and configuration."""
     from probe.store.database import ProbeDB
 
-    probe_dir = _find_probe_dir()
+    probe_dir = _require_probe_dir()
     config = _get_config()
     db = ProbeDB(probe_dir / "probe.db")
     db.initialize()
@@ -211,7 +222,7 @@ def list_files():
     """List all indexed files."""
     from probe.store.database import ProbeDB
 
-    probe_dir = _find_probe_dir()
+    probe_dir = _require_probe_dir()
     db = ProbeDB(probe_dir / "probe.db")
     db.initialize()
     files = db.list_files()
