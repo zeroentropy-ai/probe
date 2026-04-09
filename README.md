@@ -17,50 +17,49 @@ probe bridges this gap. It ingests everything -- markdown docs, code, PDFs, plai
 ## Quick Start
 
 ```bash
+# 1. Get a free API key at https://www.zeroentropy.dev
+# 2. Install
 pip install probe-search
 
-export ZEROENTROPY_API_KEY="your-key"
+# 3. Set your API key
+export ZEROENTROPY_API_KEY="ze_xxx"
 
-# Index your project
+# 4. Index and search
 probe index .
-
-# Search with natural language
 probe search "how does authentication work"
+```
+
+Or run without installing:
+
+```bash
+uvx probe-search search "how does authentication work"
 ```
 
 ---
 
-## MCP Server Setup
+## MCP Server Setup (Claude Code, Cursor)
 
-probe ships as an MCP server so AI agents can call it directly.
-
-**Claude Code** (`~/.claude/claude_code_config.json`):
+Add a `.mcp.json` file to your project root:
 
 ```json
 {
   "mcpServers": {
     "probe": {
-      "command": "probe",
-      "args": ["mcp"]
+      "command": "uvx",
+      "args": ["probe-search", "mcp"],
+      "env": {
+        "ZEROENTROPY_API_KEY": "ze_xxx"
+      }
     }
   }
 }
 ```
 
-**Cursor** (`.cursor/mcp.json`):
+This works with Claude Code, Cursor, and any MCP-compatible agent. No `pip install` required -- `uvx` handles it.
 
-```json
-{
-  "mcpServers": {
-    "probe": {
-      "command": "probe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+On first use, probe automatically indexes your project and serves results. No manual setup needed -- just ask your agent a question and it works.
 
-Once configured, your AI agent gains four tools: `probe_search`, `probe_index`, `probe_status`, and `probe_read`.
+Your agent gains four tools: `probe_search`, `probe_index`, `probe_status`, and `probe_read`.
 
 ---
 
@@ -69,87 +68,83 @@ Once configured, your AI agent gains four tools: `probe_search`, `probe_index`, 
 probe uses a three-step pipeline to find the best context for every query:
 
 **1. Hybrid Retrieval**
-Each query runs through two parallel search paths: semantic vector search (cosine similarity against embeddings) and keyword search (BM25 over SQLite FTS5). This catches both conceptual matches and exact term hits.
+Each query runs through two parallel search paths: semantic vector search (cosine similarity against zembed-1 embeddings) and keyword search (BM25 over SQLite FTS5). This catches both conceptual matches and exact term hits.
 
 **2. Cross-Source Reranking**
-Results from both paths are fused using Reciprocal Rank Fusion, then passed through a neural reranker that scores each chunk against the original query. This pushes the most relevant results to the top regardless of which retrieval path found them.
+Results from both paths are fused using Reciprocal Rank Fusion, then passed through zerank-2, a neural cross-encoder reranker that scores each chunk against the original query. Docs and code are ranked together -- the best answer wins regardless of file type.
 
 **3. Smart Context Assembly**
-The top results are assembled into a response that fits within your token budget. Each result includes its source file, location metadata (header paths, symbol names, page numbers), and a relevance score.
+The top results are deduplicated, trimmed to your token budget, and assembled into a response. Each result includes its source file, location metadata (header paths for markdown, symbol names for code, page numbers for PDFs), and a relevance score.
 
 ---
 
 ## Example Output
 
 ```
-$ probe search "how does the retry logic work"
+$ probe search "how does authentication work"
 
- Found 5 results (127 chunks searched)
+ Found 5 results (342 chunks searched)
 
- [0.92] docs/architecture.md > Error Handling > Retry Strategy
-   The retry mechanism uses exponential backoff with jitter.
-   Base delay starts at 100ms, doubling on each attempt up to
-   a maximum of 5 retries.
+ [0.94] docs/design/auth.md > Authentication > OAuth Flow
+   We use PKCE-based OAuth 2.0 with Auth0 as the identity provider.
+   The flow works as follows: 1) Client generates a code verifier
+   and challenge, 2) User is redirected to Auth0's /authorize...
 
- [0.87] src/client/http.py > RetryHandler
-   class RetryHandler:
-       def __init__(self, max_retries=5, base_delay=0.1):
-           self.max_retries = max_retries
+ [0.87] src/auth/oauth.py > class OAuthHandler
+   class OAuthHandler:
+       """Handles OAuth2 PKCE flow for web and mobile clients."""
+       def __init__(self, client_id: str, redirect_uri: str):
+           self.client_id = client_id...
 
- [0.71] docs/api-reference.md > Configuration > retry_policy
-   The retry_policy field accepts an object with max_retries
-   (int) and backoff_factor (float) keys.
-
- [0.58] tests/test_retry.py > TestRetryHandler
-   def test_exponential_backoff(self):
-       handler = RetryHandler(max_retries=3)
-
- [0.41] CHANGELOG.md > v2.1.0
-   Added configurable retry logic for transient API failures.
+ [0.82] docs/adr/003-auth-provider.md > ADR-003: Auth Provider Selection
+   ## Decision
+   We chose Auth0 over Cognito because: 1) Better PKCE support,
+   2) Built-in MFA, 3) Superior documentation...
 
  ------------------------------------------
- zembed-1 + zerank-2 | 1,847 tokens | 0.8s
+ zembed-1 + zerank-2 | 1,847 tokens | 0.3s
 ```
+
+Notice how the agent gets three different kinds of context from one query: the design spec, the implementation code, and the architectural decision record.
 
 ---
 
 ## CLI Reference
 
-| Command         | Description                                       |
-| --------------- | ------------------------------------------------- |
-| `probe index`   | Index project files for semantic search            |
-| `probe search`  | Search project knowledge with natural language     |
-| `probe status`  | Show index status and configuration                |
-| `probe list`    | List all indexed files                             |
-| `probe config`  | Show current provider configuration                |
-| `probe init`    | Interactive setup: choose providers and API keys   |
-| `probe mcp`     | Start the MCP server (stdio transport)             |
+| Command | Description |
+|---------|-------------|
+| `probe index [paths...]` | Index project files for semantic search |
+| `probe index --full` | Force full re-index (ignore file hashes) |
+| `probe search "query"` | Search project knowledge with natural language |
+| `probe search --top-k N` | Limit number of results (default: 10) |
+| `probe search --type code` | Filter results by file type (markdown, code, pdf, text) |
+| `probe search --no-rerank` | Skip reranking (faster, lower quality) |
+| `probe search --max-tokens N` | Set token budget for results (default: 4096) |
+| `probe status` | Show index status and configuration |
+| `probe list` | List all indexed files |
+| `probe config` | Show current provider configuration |
+| `probe init` | Auto-detect provider and save configuration |
+| `probe mcp` | Start the MCP server (stdio transport) |
 
 ---
 
 ## Multi-Provider Support
 
-| Provider       | Embedding Model             | Reranker       | Dimensions |
-| -------------- | --------------------------- | -------------- | ---------- |
-| ZeroEntropy    | `zembed-1` (default)        | `zerank-2`     | 1024       |
-| OpenAI         | `text-embedding-3-large`    | --             | 1536       |
-| Cohere         | `embed-v4.0`                | `rerank-v3.5`  | 1024       |
+probe defaults to ZeroEntropy but supports multiple embedding and reranking providers:
 
-Install optional providers:
+| Provider | Embedding | Reranker | Install |
+|----------|-----------|----------|---------|
+| **ZeroEntropy** (default) | zembed-1 | zerank-2 | included |
+| OpenAI | text-embedding-3-large | -- | `pip install "probe-search[openai]"` |
+| Cohere | embed-v4.0 | rerank-v3.5 | `pip install "probe-search[cohere]"` |
 
-```bash
-pip install "probe-search[openai]"     # OpenAI support
-pip install "probe-search[cohere]"     # Cohere support
-pip install "probe-search[all]"        # All providers
-```
-
-Set the corresponding API key environment variable (`ZEROENTROPY_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY`) and run `probe init` to auto-detect and configure your provider.
+Set the corresponding API key (`ZEROENTROPY_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY`) and run `probe init` to auto-detect and configure your provider. You can also mix providers -- for example, use OpenAI for embeddings with ZeroEntropy for reranking.
 
 ---
 
 ## Why ZeroEntropy?
 
-ZeroEntropy is the default provider because `zembed-1` outperforms alternatives across nine domains including code, documentation, and technical writing. Combined with `zerank-2` for reranking, it provides the best retrieval quality for software project context.
+zembed-1 is a 4B-parameter open-weight embedding model that outperforms OpenAI, Cohere, and Voyage across nine domains including code, legal, finance, and healthcare. Combined with zerank-2 for cross-encoder reranking, it provides the best retrieval quality for software project context.
 
 See the [ZeroEntropy benchmarks](https://www.zeroentropy.dev/blog/zembed-1) for detailed comparisons.
 
@@ -157,7 +152,7 @@ See the [ZeroEntropy benchmarks](https://www.zeroentropy.dev/blog/zembed-1) for 
 
 ## Configuration
 
-probe stores its configuration and index data in a `.probe/` directory at your project root.
+probe stores its index and configuration in a `.probe/` directory at your project root. Add `.probe/` to your `.gitignore`.
 
 ```yaml
 # .probe/config.yaml
@@ -165,7 +160,7 @@ providers:
   embedding:
     name: zeroentropy
     model: zembed-1
-    dimensions: 1024
+    dimensions: 1280
   reranker:
     name: zeroentropy
     model: zerank-2
@@ -173,13 +168,19 @@ providers:
 
 ---
 
+## How Data Is Handled
+
+Your documents are chunked and stored locally in `.probe/` (SQLite + numpy). Only chunk text is sent to the embedding/reranking API for processing -- the same as any RAG system. Documents themselves are never uploaded or stored on any external server.
+
+---
+
 ## What's NOT in v1
 
-- Incremental watch mode (file system watcher for auto-reindexing)
-- Remote/shared indexes (team-wide search)
+- File system watcher for auto-reindexing on changes
+- Web sources (Notion, Confluence, Google Docs crawling)
+- Git-aware context (commit history, blame, change tracking)
+- Image/diagram understanding within PDFs
 - Custom chunking strategies via config
-- Plug-in extractors for additional file types (e.g., Jupyter notebooks, Confluence)
-- Query history and analytics
 - Streaming search results
 
 ---
