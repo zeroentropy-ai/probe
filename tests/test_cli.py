@@ -73,3 +73,70 @@ class TestCLI:
     def test_install_command_exists(self, runner):
         result = runner.invoke(main, ["install", "--help"])
         assert result.exit_code == 0
+
+    def test_install_uses_api_key_flag(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        # Stub claude-mcp-get to "not installed" (exit 1) and claude-mcp-add to success.
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if "get" in cmd else 0
+            r.stdout = b""
+            r.stderr = b""
+            return r
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--api-key", "sk-test-123"])
+        # No key prompt appears in output (non-interactive via flag)
+        assert "Enter your ZeroEntropy API key" not in result.output
+
+    def test_install_uses_env_key_by_default(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "env-key-xyz")
+        captured = {}
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if "get" in cmd else 0
+            r.stdout = b""
+            r.stderr = b""
+            if "add" in cmd:
+                captured["cmd"] = cmd
+            return r
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        # Hit enter at the confirm prompt → default yes
+        result = runner.invoke(main, ["install"], input="\n")
+        assert result.exit_code == 0
+        assert "Use $ZEROENTROPY_API_KEY from environment?" in result.output
+        # Verify the env key ended up in the add args
+        assert "ZEROENTROPY_API_KEY=env-key-xyz" in " ".join(captured["cmd"])
+
+    def test_install_rejects_empty_key_after_retries(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        monkeypatch.delenv("ZEROENTROPY_API_KEY", raising=False)
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1
+            r.stdout = b""
+            r.stderr = b""
+            return r
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        # Give empty input 3 times (4 newlines = 4 empty tries, hit the cap)
+        result = runner.invoke(main, ["install"], input="\n\n\n\n")
+        assert result.exit_code == 1
+        assert "API key required" in result.output

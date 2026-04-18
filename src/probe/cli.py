@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -329,4 +330,70 @@ def install(api_key, no_embed_key, force):
         )
         sys.exit(1)
 
-    console.print("[bold]probe install — coming in the next tasks...[/bold]")
+    # Check if already installed
+    get_result = subprocess.run(
+        [claude_bin, "mcp", "get", "probe", "--scope", "user"],
+        capture_output=True,
+    )
+    if get_result.returncode == 0:
+        if not force:
+            if not click.confirm("probe is already registered. Reinstall?", default=False):
+                console.print("No changes made.")
+                return
+        subprocess.run(
+            [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
+            capture_output=True,
+        )
+
+    # Resolve API key
+    resolved_key: str | None = None
+    if not no_embed_key:
+        if api_key:
+            resolved_key = api_key
+        else:
+            env_key = os.environ.get("ZEROENTROPY_API_KEY")
+            if env_key and click.confirm(
+                "Use $ZEROENTROPY_API_KEY from environment?", default=True,
+            ):
+                resolved_key = env_key
+            else:
+                for _ in range(3):
+                    entered = click.prompt(
+                        "Enter your ZeroEntropy API key",
+                        hide_input=True, default="", show_default=False,
+                    )
+                    if entered.strip():
+                        resolved_key = entered.strip()
+                        break
+                else:
+                    console.print("[red]API key required.[/red]")
+                    sys.exit(1)
+
+    # Resolve probe argv
+    probe_bin = shutil.which("probe")
+    if probe_bin:
+        probe_argv = [probe_bin, "mcp"]
+    else:
+        probe_argv = [sys.executable, "-m", "probe.cli", "mcp"]
+        console.print(
+            f"[yellow]Note: probe binary not on PATH; using {sys.executable} -m probe.cli. "
+            "If you move this Python env, rerun `probe install`.[/yellow]"
+        )
+
+    # Build and run claude mcp add
+    add_cmd = [claude_bin, "mcp", "add", "--scope", "user", "--transport", "stdio"]
+    if resolved_key:
+        add_cmd += ["-e", f"ZEROENTROPY_API_KEY={resolved_key}"]
+    add_cmd += ["probe", "--", *probe_argv]
+
+    add_result = subprocess.run(add_cmd, capture_output=True)
+    if add_result.returncode != 0:
+        console.print(f"[red]claude mcp add failed:[/red]\n{add_result.stderr.decode()}")
+        sys.exit(1)
+
+    console.print(
+        "[green]✓ probe installed at user scope.[/green]\n"
+        "  Open any project in Claude Code and ask a question — "
+        "probe will auto-index on first search.\n"
+        "  To uninstall: probe uninstall"
+    )
