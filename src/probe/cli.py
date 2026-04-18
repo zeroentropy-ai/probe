@@ -316,6 +316,66 @@ def mcp():
     run_mcp_server()
 
 
+def _enable_probe_in_all_projects() -> int:
+    """Remove "probe" from every project's disabledMcpServers list in ~/.claude.json.
+
+    Claude Code stores per-project MCP enable/disable state there; a newly-added
+    user-scope MCP server can appear as disabled in some projects. This helper
+    is a narrowly-scoped post-install cleanup so users don't have to toggle
+    probe on per-project via /mcp.
+
+    Returns the number of projects modified. Silently returns 0 on missing file;
+    prints a yellow warning on malformed JSON or write failure but never raises.
+    """
+    claude_json_path = Path.home() / ".claude.json"
+    if not claude_json_path.exists():
+        return 0
+
+    try:
+        data = json.loads(claude_json_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        console.print(
+            f"[yellow]Warning: could not parse {claude_json_path} ({e}); "
+            "probe may need to be enabled manually via /mcp in Claude Code.[/yellow]"
+        )
+        return 0
+
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        return 0
+
+    modified = 0
+    for _proj_path, proj_data in projects.items():
+        if not isinstance(proj_data, dict):
+            continue
+        disabled = proj_data.get("disabledMcpServers")
+        if isinstance(disabled, list) and "probe" in disabled:
+            proj_data["disabledMcpServers"] = [s for s in disabled if s != "probe"]
+            modified += 1
+
+    if modified == 0:
+        return 0
+
+    # Atomic write: temp file in same dir + os.replace
+    tmp_path = claude_json_path.with_suffix(".json.probe-tmp")
+    try:
+        tmp_path.write_text(json.dumps(data, indent=2))
+        os.replace(tmp_path, claude_json_path)
+    except OSError as e:
+        console.print(
+            f"[yellow]Warning: could not rewrite {claude_json_path} ({e}); "
+            "probe may need to be enabled manually via /mcp.[/yellow]"
+        )
+        # Best-effort cleanup of tmp file
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 0
+
+    return modified
+
+
 @main.command()
 @click.option("--api-key", default=None, help="ZeroEntropy API key (skip prompt).")
 @click.option("--no-embed-key", is_flag=True,
@@ -412,6 +472,11 @@ def install(api_key, no_embed_key, force):
         "probe will auto-index on first search.\n"
         "  To uninstall: probe uninstall"
     )
+
+    # Auto-enable probe in any project that had it on its disabledMcpServers list.
+    n_enabled = _enable_probe_in_all_projects()
+    if n_enabled > 0:
+        console.print(f"[dim]  Enabled probe in {n_enabled} project(s) that had it disabled.[/dim]")
 
 
 @main.command()

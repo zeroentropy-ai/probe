@@ -271,3 +271,115 @@ class TestCLI:
         result = runner.invoke(main, ["uninstall", "--purge"])
         assert result.exit_code == 0
         assert not probe_dir.exists()
+
+    def test_install_enables_probe_in_disabled_projects(self, runner, monkeypatch, tmp_path):
+        """After install, probe should be removed from disabledMcpServers in all projects."""
+        import json as _json
+
+        # Seed a fake ~/.claude.json with probe disabled in two projects
+        home = tmp_path / "home"
+        home.mkdir()
+        fake_claude_json = home / ".claude.json"
+        fake_claude_json.write_text(_json.dumps({
+            "projects": {
+                "/project/a": {
+                    "mcpServers": {},
+                    "disabledMcpServers": ["probe", "other-server"],
+                    "enabledMcpjsonServers": [],
+                    "hasTrustDialogAccepted": True,
+                },
+                "/project/b": {
+                    "mcpServers": {},
+                    "disabledMcpServers": ["probe"],
+                    "hasTrustDialogAccepted": True,
+                },
+                "/project/c": {
+                    "mcpServers": {},
+                    "disabledMcpServers": ["other-server"],  # probe not disabled; leave alone
+                },
+                "/project/d": {
+                    "mcpServers": {},
+                    # no disabledMcpServers key at all — leave alone
+                },
+            },
+            "someTopLevelKey": "unchanged",
+        }, indent=2))
+
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr("pathlib.Path.home", lambda: home)
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if "get" in cmd else 0  # get → not installed; add-json → success
+            r.stdout = b""
+            r.stderr = b""
+            return r
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--api-key", "sk-test"])
+        assert result.exit_code == 0, f"install failed: {result.output}"
+
+        # Verify the JSON was updated
+        data = _json.loads(fake_claude_json.read_text())
+        # probe removed from /project/a's list but other-server retained
+        assert data["projects"]["/project/a"]["disabledMcpServers"] == ["other-server"]
+        # probe removed from /project/b's list (now empty)
+        assert data["projects"]["/project/b"]["disabledMcpServers"] == []
+        # /project/c untouched (probe wasn't in it)
+        assert data["projects"]["/project/c"]["disabledMcpServers"] == ["other-server"]
+        # /project/d untouched (no disabledMcpServers key at all)
+        assert "disabledMcpServers" not in data["projects"]["/project/d"]
+        # Top-level unchanged
+        assert data["someTopLevelKey"] == "unchanged"
+
+    def test_install_handles_missing_claude_json(self, runner, monkeypatch, tmp_path):
+        """If ~/.claude.json doesn't exist, install still succeeds silently."""
+        home = tmp_path / "home"
+        home.mkdir()
+        # DO NOT create ~/.claude.json
+
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr("pathlib.Path.home", lambda: home)
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **k: type("R", (), {"returncode": 1 if "get" in a[0] else 0,
+                                            "stdout": b"", "stderr": b""})(),
+        )
+
+        result = runner.invoke(main, ["install", "--api-key", "sk-test"])
+        assert result.exit_code == 0
+        # ~/.claude.json should not have been created
+        assert not (home / ".claude.json").exists()
+
+    def test_install_handles_malformed_claude_json(self, runner, monkeypatch, tmp_path):
+        """If ~/.claude.json is corrupt, print a warning but don't fail install."""
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / ".claude.json").write_text("{ this is not valid json")
+
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr("pathlib.Path.home", lambda: home)
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **k: type("R", (), {"returncode": 1 if "get" in a[0] else 0,
+                                            "stdout": b"", "stderr": b""})(),
+        )
+
+        result = runner.invoke(main, ["install", "--api-key", "sk-test"])
+        assert result.exit_code == 0  # still succeeds
+        # Warning should be printed
+        assert "Warning" in result.output or "warning" in result.output
