@@ -107,7 +107,7 @@ class TestIndexPipeline:
         assert stats["added"] == 1
         assert stats["changed"] == 0
         paths = {f["path"] for f in pipeline.db.list_files()}
-        assert any(p.endswith("new.md") for p in paths)
+        assert str(work / "new.md") in paths
         assert mock_embedding_provider.embed.call_count >= 1
 
     def test_refresh_edited_file(self, pipeline, fixtures_dir, tmp_path,

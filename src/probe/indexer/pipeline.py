@@ -35,7 +35,8 @@ class IndexPipeline:
 
         content = extract_content(file_path)
         if not content.strip():
-            # Still return old_ids so caller can delete from vector store
+            # File is now empty; caller (which tracked old chunk IDs before
+            # calling) handles vector-store deletion; we just signal "nothing new".
             return ([], [])
 
         chunks = chunk_content(content, rel_path, file_type)
