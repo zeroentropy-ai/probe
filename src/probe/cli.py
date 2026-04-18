@@ -397,3 +397,24 @@ def install(api_key, no_embed_key, force):
         "probe will auto-index on first search.\n"
         "  To uninstall: probe uninstall"
     )
+
+
+@main.command()
+@click.option("--purge", is_flag=True, help="Also delete .probe/ from cwd.")
+def uninstall(purge):
+    """Unregister probe from Claude Code."""
+    claude_bin = shutil.which("claude")
+    if claude_bin:
+        subprocess.run(
+            [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
+            capture_output=True,
+        )
+        # Ignore errors: "not found" is fine.
+
+    if purge:
+        probe_dir = Path.cwd() / ".probe"
+        if probe_dir.exists():
+            shutil.rmtree(probe_dir, ignore_errors=True)
+            console.print(f"[dim]Deleted {probe_dir}[/dim]")
+
+    console.print("[green]✓ probe uninstalled.[/green]")

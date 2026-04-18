@@ -221,3 +221,44 @@ class TestCLI:
         # We should have called get, remove, add
         assert any("remove" in cmd for cmd in seen)
         assert any("add" in cmd for cmd in seen)
+
+    def test_uninstall_calls_claude_mcp_remove(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name == "claude" else None,
+        )
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd)
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["uninstall"])
+        assert result.exit_code == 0
+        assert any("remove" in cmd for cmd in seen)
+
+    def test_uninstall_purge_deletes_dot_probe(self, runner, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name == "claude" else None,
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **k: type("R", (), {"returncode": 0, "stdout": b"", "stderr": b""})(),
+        )
+        monkeypatch.chdir(tmp_path)
+        probe_dir = tmp_path / ".probe"
+        probe_dir.mkdir()
+        (probe_dir / "probe.db").write_text("dummy")
+
+        result = runner.invoke(main, ["uninstall", "--purge"])
+        assert result.exit_code == 0
+        assert not probe_dir.exists()
