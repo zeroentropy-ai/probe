@@ -1,7 +1,9 @@
 """Tests for BM25 search wrapper."""
 
 from pathlib import Path
+
 import pytest
+
 from probe.search.bm25 import BM25Search
 from probe.store.database import ProbeDB
 

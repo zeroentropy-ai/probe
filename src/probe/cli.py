@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -13,6 +16,7 @@ from rich.table import Table
 
 import probe
 from probe.config import DEFAULT_MODELS, ProbeConfig, detect_provider, load_config, save_config
+from probe.indexer.refresh_gate import RefreshGate
 
 console = Console()
 PROBE_DIR_NAME = ".probe"
@@ -146,6 +150,36 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
     vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
     vector_store.load()
 
+    # Refresh-before-search: update index if files changed since last index.
+    gate = RefreshGate.from_env()
+    if gate.should_refresh():
+        from probe.indexer.pipeline import IndexPipeline
+        embedding_for_refresh, _ = _build_providers(config)
+        pipeline = IndexPipeline(
+            db=db, vector_store=vector_store,
+            embedding_provider=embedding_for_refresh,
+        )
+        try:
+            refresh_stats = pipeline.refresh_changed([Path.cwd()])
+            gate.mark()
+            total_changed = (
+                refresh_stats["added"] + refresh_stats["changed"] + refresh_stats["removed"]
+            )
+            if total_changed > 0:
+                console.print(
+                    f"[dim]Refreshed: +{refresh_stats['added']} "
+                    f"±{refresh_stats['changed']} -{refresh_stats['removed']} "
+                    f"({refresh_stats['elapsed_ms']}ms)[/dim]"
+                )
+        except Exception as e:
+            from rich.markup import escape
+            console.print(
+                f"[yellow]Warning: refresh failed ({escape(str(e))}); using stale index.[/yellow]"
+            )
+
+    # Note: providers are built twice on search — once for the refresh pass above
+    # and once here for the search. Provider constructors are cheap; keeping the
+    # two paths independent avoids having the refresh block reach into search state.
     embedding, reranker = _build_providers(config)
 
     engine = ContextEngine(db=db, vector_store=vector_store,
@@ -280,3 +314,187 @@ def mcp():
     """Start the MCP server (stdio transport)."""
     from probe.mcp.server import run_mcp_server
     run_mcp_server()
+
+
+def _enable_probe_in_all_projects() -> int:
+    """Remove "probe" from every project's disabledMcpServers list in ~/.claude.json.
+
+    Claude Code stores per-project MCP enable/disable state there; a newly-added
+    user-scope MCP server can appear as disabled in some projects. This helper
+    is a narrowly-scoped post-install cleanup so users don't have to toggle
+    probe on per-project via /mcp.
+
+    Returns the number of projects modified. Silently returns 0 on missing file;
+    prints a yellow warning on malformed JSON or write failure but never raises.
+    """
+    claude_json_path = Path.home() / ".claude.json"
+    if not claude_json_path.exists():
+        return 0
+
+    try:
+        data = json.loads(claude_json_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        console.print(
+            f"[yellow]Warning: could not parse {claude_json_path} ({e}); "
+            "probe may need to be enabled manually via /mcp in Claude Code.[/yellow]"
+        )
+        return 0
+
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        return 0
+
+    modified = 0
+    for _proj_path, proj_data in projects.items():
+        if not isinstance(proj_data, dict):
+            continue
+        disabled = proj_data.get("disabledMcpServers")
+        if isinstance(disabled, list) and "probe" in disabled:
+            proj_data["disabledMcpServers"] = [s for s in disabled if s != "probe"]
+            modified += 1
+
+    if modified == 0:
+        return 0
+
+    # Atomic write: temp file in same dir + os.replace
+    tmp_path = claude_json_path.with_suffix(".json.probe-tmp")
+    try:
+        tmp_path.write_text(json.dumps(data, indent=2))
+        os.replace(tmp_path, claude_json_path)
+    except OSError as e:
+        console.print(
+            f"[yellow]Warning: could not rewrite {claude_json_path} ({e}); "
+            "probe may need to be enabled manually via /mcp.[/yellow]"
+        )
+        # Best-effort cleanup of tmp file
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 0
+
+    return modified
+
+
+@main.command()
+@click.option("--api-key", default=None, help="ZeroEntropy API key (skip prompt).")
+@click.option("--no-embed-key", is_flag=True,
+              help="Register without embedding API key (rely on shell env).")
+@click.option("--force", is_flag=True, help="Skip already-installed confirmation.")
+def install(api_key, no_embed_key, force):
+    """Register probe as a user-scope MCP server in Claude Code."""
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        console.print(
+            "[red]Claude Code CLI not found.[/red] "
+            "Install it from the official Claude Code documentation, then rerun `probe install`."
+        )
+        sys.exit(1)
+
+    # Check if already installed. `claude mcp get` doesn't accept --scope; it
+    # searches across scopes, which is fine for our "already installed?" check.
+    get_result = subprocess.run(
+        [claude_bin, "mcp", "get", "probe"],
+        capture_output=True,
+    )
+    if get_result.returncode == 0:
+        if not force:
+            if not click.confirm("probe is already registered. Reinstall?", default=False):
+                console.print("No changes made.")
+                return
+        subprocess.run(
+            [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
+            capture_output=True,
+        )
+
+    # Resolve API key
+    resolved_key: str | None = None
+    if not no_embed_key:
+        if api_key:
+            resolved_key = api_key
+        else:
+            env_key = os.environ.get("ZEROENTROPY_API_KEY")
+            if env_key and click.confirm(
+                "Use $ZEROENTROPY_API_KEY from environment?", default=True,
+            ):
+                resolved_key = env_key
+            else:
+                for _ in range(3):
+                    entered = click.prompt(
+                        "Enter your ZeroEntropy API key",
+                        hide_input=True, default="", show_default=False,
+                    )
+                    if entered.strip():
+                        resolved_key = entered.strip()
+                        break
+                else:
+                    console.print("[red]API key required.[/red]")
+                    sys.exit(1)
+
+    # Resolve probe command + args
+    probe_bin = shutil.which("probe")
+    if probe_bin:
+        probe_command = probe_bin
+        probe_args = ["mcp"]
+    else:
+        probe_command = sys.executable
+        probe_args = ["-m", "probe.cli", "mcp"]
+        console.print(
+            f"[yellow]Note: probe binary not on PATH; using {sys.executable} -m probe.cli. "
+            "If you move this Python env, rerun `probe install`.[/yellow]"
+        )
+
+    # Build the JSON config. Using `claude mcp add-json` instead of
+    # `claude mcp add` because the latter's -e flag is variadic and eats
+    # the server-name positional in some arg orderings.
+    mcp_config: dict = {
+        "type": "stdio",
+        "command": probe_command,
+        "args": probe_args,
+    }
+    if resolved_key:
+        mcp_config["env"] = {"ZEROENTROPY_API_KEY": resolved_key}
+
+    add_cmd = [
+        claude_bin, "mcp", "add-json", "--scope", "user", "probe",
+        json.dumps(mcp_config),
+    ]
+    add_result = subprocess.run(add_cmd, capture_output=True)
+    if add_result.returncode != 0:
+        console.print(
+            f"[red]claude mcp add-json failed:[/red]\n{add_result.stderr.decode(errors='replace')}"
+        )
+        sys.exit(1)
+
+    console.print(
+        "[green]✓ probe installed at user scope.[/green]\n"
+        "  Open any project in Claude Code and ask a question — "
+        "probe will auto-index on first search.\n"
+        "  To uninstall: probe uninstall"
+    )
+
+    # Auto-enable probe in any project that had it on its disabledMcpServers list.
+    n_enabled = _enable_probe_in_all_projects()
+    if n_enabled > 0:
+        console.print(f"[dim]  Enabled probe in {n_enabled} project(s) that had it disabled.[/dim]")
+
+
+@main.command()
+@click.option("--purge", is_flag=True, help="Also delete .probe/ from cwd.")
+def uninstall(purge):
+    """Unregister probe from Claude Code."""
+    claude_bin = shutil.which("claude")
+    if claude_bin:
+        subprocess.run(
+            [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
+            capture_output=True,
+        )
+        # Ignore errors: "not found" is fine.
+
+    if purge:
+        probe_dir = Path.cwd() / ".probe"
+        if probe_dir.exists():
+            shutil.rmtree(probe_dir, ignore_errors=True)
+            console.print(f"[dim]Deleted {probe_dir}[/dim]")
+
+    console.print("[green]✓ probe uninstalled.[/green]")

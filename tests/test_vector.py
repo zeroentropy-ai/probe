@@ -1,8 +1,10 @@
 """Tests for numpy vector store."""
 
 from pathlib import Path
+
 import numpy as np
 import pytest
+
 from probe.search.vector import VectorStore
 
 

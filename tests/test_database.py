@@ -99,3 +99,32 @@ class TestStats:
         assert stats["total_files"] == 1
         assert stats["total_chunks"] == 1
         assert stats["file_types"]["markdown"] == 1
+
+
+class TestMtimeAndSize:
+    def test_files_table_has_mtime_ns_and_size_columns(self, tmp_probe_dir: Path):
+        db = ProbeDB(tmp_probe_dir / "probe.db")
+        db.initialize()
+        cols = {row[1] for row in db.conn.execute("PRAGMA table_info(files)").fetchall()}
+        assert "mtime_ns" in cols
+        assert "size" in cols
+        db.close()
+
+    def test_initialize_is_idempotent(self, tmp_probe_dir: Path):
+        """Running initialize() twice must not error (ALTER TABLE would fail on second call)."""
+        db = ProbeDB(tmp_probe_dir / "probe.db")
+        db.initialize()
+        db.initialize()  # second call should be a no-op
+        db.close()
+
+    def test_add_file_accepts_mtime_and_size(self, tmp_probe_dir: Path):
+        db = ProbeDB(tmp_probe_dir / "probe.db")
+        db.initialize()
+        file_id = db.add_file("foo.md", "abc123", "markdown", mtime_ns=1700000000000000000, size=42)
+        assert file_id > 0
+        row = db.conn.execute(
+            "SELECT mtime_ns, size FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+        assert row["mtime_ns"] == 1700000000000000000
+        assert row["size"] == 42
+        db.close()

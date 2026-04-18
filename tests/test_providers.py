@@ -3,10 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from probe.providers.zeroentropy import ZeroEntropyEmbedding, ZeroEntropyRerank
-from probe.models import RerankResult
 
 
 class TestZeroEntropyEmbedding:
@@ -15,7 +13,10 @@ class TestZeroEntropyEmbedding:
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_response = MagicMock()
-        mock_response.results = [MagicMock(embedding=[0.1] * 1024), MagicMock(embedding=[0.2] * 1024)]
+        mock_response.results = [
+            MagicMock(embedding=[0.1] * 1024),
+            MagicMock(embedding=[0.2] * 1024),
+        ]
         mock_client.models.embed.return_value = mock_response
 
         provider = ZeroEntropyEmbedding(api_key="test-key", dimensions=1024)

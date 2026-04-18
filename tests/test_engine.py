@@ -1,6 +1,5 @@
 """Tests for the context engine."""
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
