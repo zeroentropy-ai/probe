@@ -71,14 +71,27 @@ class ProbeDB:
                 INSERT INTO chunks_fts(rowid, content) VALUES (new.id, new.content);
             END;
         """)
+        # Migration: add mtime_ns and size columns for refresh-before-search.
+        # ALTER TABLE is idempotent via try/except on duplicate-column.
+        for ddl in [
+            "ALTER TABLE files ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE files ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
+        ]:
+            try:
+                self.conn.execute(ddl)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         # Re-enable foreign keys after executescript (it issues an implicit COMMIT)
         self.conn.execute("PRAGMA foreign_keys=ON")
 
-    def add_file(self, path: str, hash: str, file_type: str) -> int:
+    def add_file(self, path: str, hash: str, file_type: str,
+                 mtime_ns: int = 0, size: int = 0) -> int:
         now = datetime.now(timezone.utc).isoformat()
         cursor = self.conn.execute(
-            "INSERT INTO files (path, hash, file_type, indexed_at) VALUES (?, ?, ?, ?)",
-            (path, hash, file_type, now),
+            """INSERT INTO files (path, hash, file_type, indexed_at, mtime_ns, size)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (path, hash, file_type, now, mtime_ns, size),
         )
         self.conn.commit()
         return cursor.lastrowid
@@ -173,6 +186,23 @@ class ProbeDB:
             "file_types": file_types,
             "last_indexed": last_indexed,
         }
+
+    def get_file_signature(self, path: str) -> tuple[str, int, int] | None:
+        """Return (hash, mtime_ns, size) for a file, or None if not indexed."""
+        row = self.conn.execute(
+            "SELECT hash, mtime_ns, size FROM files WHERE path = ?", (path,),
+        ).fetchone()
+        if not row:
+            return None
+        return (row["hash"], row["mtime_ns"], row["size"])
+
+    def update_file_signature(self, path: str, mtime_ns: int, size: int) -> None:
+        """Update mtime_ns/size without touching hash or re-indexing."""
+        self.conn.execute(
+            "UPDATE files SET mtime_ns = ?, size = ? WHERE path = ?",
+            (mtime_ns, size, path),
+        )
+        self.conn.commit()
 
     def close(self) -> None:
         if self._conn:
