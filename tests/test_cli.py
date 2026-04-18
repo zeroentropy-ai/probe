@@ -140,3 +140,84 @@ class TestCLI:
         result = runner.invoke(main, ["install"], input="\n\n\n\n")
         assert result.exit_code == 1
         assert "API key required" in result.output
+
+    def test_install_no_embed_key_omits_env(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        captured = {}
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if "get" in cmd else 0
+            r.stdout = b""
+            r.stderr = b""
+            if "add" in cmd:
+                captured["cmd"] = cmd
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--no-embed-key"])
+        assert result.exit_code == 0
+        joined = " ".join(captured["cmd"])
+        assert "ZEROENTROPY_API_KEY=" not in joined
+        assert "-e" not in captured["cmd"]
+        # Verify structural integrity: the `--` separator must precede the probe argv.
+        assert "--" in captured["cmd"]
+        dash_idx = captured["cmd"].index("--")
+        assert dash_idx < captured["cmd"].index("/fake/probe")
+
+    def test_install_already_registered_cancels_without_force(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            # "get" succeeds → already registered
+            r.returncode = 0
+            r.stdout = b""
+            r.stderr = b""
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        # Hit enter → default "no" for the reinstall confirm
+        result = runner.invoke(main, ["install"], input="\n")
+        assert result.exit_code == 0
+        assert "already registered" in result.output
+        assert "No changes made" in result.output
+
+    def test_install_force_skips_confirmation(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "k")
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 0  # "get" says installed; "remove" and "add" both succeed
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd[:3])
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        # No stdin — would fail if confirm prompted
+        result = runner.invoke(main, ["install", "--force"], input="\n")
+        assert result.exit_code == 0
+        # We should have called get, remove, add
+        assert any("remove" in cmd for cmd in seen)
+        assert any("add" in cmd for cmd in seen)
