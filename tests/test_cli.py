@@ -108,7 +108,7 @@ class TestCLI:
             r.returncode = 1 if "get" in cmd else 0
             r.stdout = b""
             r.stderr = b""
-            if "add" in cmd:
+            if "add-json" in cmd:
                 captured["cmd"] = cmd
             return r
         monkeypatch.setattr("subprocess.run", fake_run)
@@ -117,8 +117,14 @@ class TestCLI:
         result = runner.invoke(main, ["install"], input="\n")
         assert result.exit_code == 0
         assert "Use $ZEROENTROPY_API_KEY from environment?" in result.output
-        # Verify the env key ended up in the add args
-        assert "ZEROENTROPY_API_KEY=env-key-xyz" in " ".join(captured["cmd"])
+        # Verify the env key ended up in the JSON config passed to add-json
+        import json as _json
+        json_arg = captured["cmd"][-1]
+        config = _json.loads(json_arg)
+        assert config["env"]["ZEROENTROPY_API_KEY"] == "env-key-xyz"
+        assert config["type"] == "stdio"
+        # Command name in argv is "add-json", not "add"
+        assert "add-json" in captured["cmd"]
 
     def test_install_rejects_empty_key_after_retries(self, runner, monkeypatch):
         monkeypatch.setattr(
@@ -155,7 +161,7 @@ class TestCLI:
             r.returncode = 1 if "get" in cmd else 0
             r.stdout = b""
             r.stderr = b""
-            if "add" in cmd:
+            if "add-json" in cmd:
                 captured["cmd"] = cmd
             return r
 
@@ -163,13 +169,16 @@ class TestCLI:
 
         result = runner.invoke(main, ["install", "--no-embed-key"])
         assert result.exit_code == 0
-        joined = " ".join(captured["cmd"])
-        assert "ZEROENTROPY_API_KEY=" not in joined
-        assert "-e" not in captured["cmd"]
-        # Verify structural integrity: the `--` separator must precede the probe argv.
-        assert "--" in captured["cmd"]
-        dash_idx = captured["cmd"].index("--")
-        assert dash_idx < captured["cmd"].index("/fake/probe")
+        import json as _json
+        json_arg = captured["cmd"][-1]
+        config = _json.loads(json_arg)
+        # No env key should be present when --no-embed-key is used
+        assert "env" not in config or not config.get("env")
+        # Structural: the command in the JSON config is the probe binary
+        assert config["command"] == "/fake/probe"
+        assert config["args"] == ["mcp"]
+        # Command name in argv is "add-json"
+        assert "add-json" in captured["cmd"]
 
     def test_install_already_registered_cancels_without_force(self, runner, monkeypatch):
         monkeypatch.setattr(
@@ -218,9 +227,9 @@ class TestCLI:
         # No stdin — would fail if confirm prompted
         result = runner.invoke(main, ["install", "--force"], input="\n")
         assert result.exit_code == 0
-        # We should have called get, remove, add
+        # We should have called get, remove, add-json
         assert any("remove" in cmd for cmd in seen)
-        assert any("add" in cmd for cmd in seen)
+        assert any("add-json" in cmd for cmd in seen)
 
     def test_uninstall_calls_claude_mcp_remove(self, runner, monkeypatch):
         monkeypatch.setattr(

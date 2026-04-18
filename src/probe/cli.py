@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -330,9 +331,10 @@ def install(api_key, no_embed_key, force):
         )
         sys.exit(1)
 
-    # Check if already installed
+    # Check if already installed. `claude mcp get` doesn't accept --scope; it
+    # searches across scopes, which is fine for our "already installed?" check.
     get_result = subprocess.run(
-        [claude_bin, "mcp", "get", "probe", "--scope", "user"],
+        [claude_bin, "mcp", "get", "probe"],
         capture_output=True,
     )
     if get_result.returncode == 0:
@@ -369,26 +371,39 @@ def install(api_key, no_embed_key, force):
                     console.print("[red]API key required.[/red]")
                     sys.exit(1)
 
-    # Resolve probe argv
+    # Resolve probe command + args
     probe_bin = shutil.which("probe")
     if probe_bin:
-        probe_argv = [probe_bin, "mcp"]
+        probe_command = probe_bin
+        probe_args = ["mcp"]
     else:
-        probe_argv = [sys.executable, "-m", "probe.cli", "mcp"]
+        probe_command = sys.executable
+        probe_args = ["-m", "probe.cli", "mcp"]
         console.print(
             f"[yellow]Note: probe binary not on PATH; using {sys.executable} -m probe.cli. "
             "If you move this Python env, rerun `probe install`.[/yellow]"
         )
 
-    # Build and run claude mcp add
-    add_cmd = [claude_bin, "mcp", "add", "--scope", "user", "--transport", "stdio"]
+    # Build the JSON config. Using `claude mcp add-json` instead of
+    # `claude mcp add` because the latter's -e flag is variadic and eats
+    # the server-name positional in some arg orderings.
+    mcp_config: dict = {
+        "type": "stdio",
+        "command": probe_command,
+        "args": probe_args,
+    }
     if resolved_key:
-        add_cmd += ["-e", f"ZEROENTROPY_API_KEY={resolved_key}"]
-    add_cmd += ["probe", "--", *probe_argv]
+        mcp_config["env"] = {"ZEROENTROPY_API_KEY": resolved_key}
 
+    add_cmd = [
+        claude_bin, "mcp", "add-json", "--scope", "user", "probe",
+        json.dumps(mcp_config),
+    ]
     add_result = subprocess.run(add_cmd, capture_output=True)
     if add_result.returncode != 0:
-        console.print(f"[red]claude mcp add failed:[/red]\n{add_result.stderr.decode()}")
+        console.print(
+            f"[red]claude mcp add-json failed:[/red]\n{add_result.stderr.decode(errors='replace')}"
+        )
         sys.exit(1)
 
     console.print(
