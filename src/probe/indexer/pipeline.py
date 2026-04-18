@@ -23,6 +23,45 @@ class IndexPipeline:
         self.vector_store = vector_store
         self.embedding_provider = embedding_provider
 
+    def _index_file(
+        self, file_path: Path, rel_path: str, file_type: str,
+        file_hash: str, mtime_ns: int, size: int,
+    ) -> tuple[list[str], list[int]]:
+        """Index a single file: delete old chunks, extract, chunk, persist.
+        Returns (new_chunk_texts, new_chunk_ids) so the caller can batch-embed.
+        Raises on extract/chunk errors; caller decides what to do."""
+        # Remove any existing vectors for this file before re-adding
+        old_ids = self.db.get_chunk_ids_for_file(rel_path)
+        self.db.delete_file(rel_path)
+
+        content = extract_content(file_path)
+        if not content.strip():
+            # Still return old_ids so caller can delete from vector store
+            return ([], [])
+
+        chunks = chunk_content(content, rel_path, file_type)
+        if not chunks:
+            return ([], [])
+
+        file_id = self.db.add_file(
+            rel_path, file_hash, file_type,
+            mtime_ns=mtime_ns, size=size,
+        )
+        new_chunk_texts: list[str] = []
+        new_chunk_ids: list[int] = []
+        for chunk in chunks:
+            chunk_id = self.db.add_chunk(
+                file_id=file_id, chunk_index=chunk.chunk_index,
+                content=chunk.content, file_type=chunk.file_type,
+                char_start=chunk.char_start, char_end=chunk.char_end,
+                token_count=chunk.token_count, header_path=chunk.header_path,
+                symbol_name=chunk.symbol_name, page_number=chunk.page_number,
+            )
+            new_chunk_texts.append(chunk.content)
+            new_chunk_ids.append(chunk_id)
+        self.db.commit()
+        return (new_chunk_texts, new_chunk_ids)
+
     def index(self, paths: list[Path], full: bool = False) -> dict:
         files = discover_files(paths)
 
@@ -55,8 +94,8 @@ class IndexPipeline:
         for file_path in files:
             file_hash = compute_file_hash(file_path)
             file_type = classify_file_type(file_path)
+            stat = file_path.stat()
 
-            # Make path relative to cwd for consistent storage
             try:
                 rel_path = str(file_path.relative_to(Path.cwd()))
             except ValueError:
@@ -68,32 +107,19 @@ class IndexPipeline:
                     files_skipped += 1
                     continue
 
-            # Track old chunk IDs for vector deletion
+            # Track old chunk IDs for vector deletion before re-adding
             old_ids = self.db.get_chunk_ids_for_file(rel_path)
             deleted_chunk_ids.update(old_ids)
-            self.db.delete_file(rel_path)
 
-            content = extract_content(file_path)
-            if not content.strip():
+            texts, ids = self._index_file(
+                file_path, rel_path, file_type, file_hash,
+                mtime_ns=stat.st_mtime_ns, size=stat.st_size,
+            )
+            if not texts:
                 continue
-
-            chunks = chunk_content(content, rel_path, file_type)
-            if not chunks:
-                continue
-
-            file_id = self.db.add_file(rel_path, file_hash, file_type)
-            for chunk in chunks:
-                chunk_id = self.db.add_chunk(
-                    file_id=file_id, chunk_index=chunk.chunk_index,
-                    content=chunk.content, file_type=chunk.file_type,
-                    char_start=chunk.char_start, char_end=chunk.char_end,
-                    token_count=chunk.token_count, header_path=chunk.header_path,
-                    symbol_name=chunk.symbol_name, page_number=chunk.page_number,
-                )
-                new_chunk_texts.append(chunk.content)
-                new_chunk_ids.append(chunk_id)
-                chunks_created += 1
-            self.db.commit()  # commit all chunks for this file atomically
+            new_chunk_texts.extend(texts)
+            new_chunk_ids.extend(ids)
+            chunks_created += len(texts)
             files_indexed += 1
 
         # Remove vectors for deleted/changed files
