@@ -14,6 +14,10 @@ class RefreshGate:
     - positive: refresh allowed once per `ttl_seconds` window
     - 0: always allowed (mark() is a no-op)
     - negative: never allowed (refresh fully disabled)
+
+    Note: should_refresh() is a read-only check; two threads may both observe
+    True in the same window. Callers that need strict single-flight semantics
+    should wrap the refresh call itself in their own lock.
     """
 
     def __init__(self, ttl_seconds: float = 5.0) -> None:

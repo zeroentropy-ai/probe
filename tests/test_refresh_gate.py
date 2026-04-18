@@ -2,8 +2,6 @@
 
 import threading
 
-import pytest
-
 from probe.indexer.refresh_gate import RefreshGate
 
 
@@ -69,8 +67,10 @@ class TestRefreshGate:
         def worker():
             results.append(gate.should_refresh())
         threads = [threading.Thread(target=worker) for _ in range(20)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
         # Without the lock this could throw; we just verify no exceptions and
         # that we got one result per thread.
         assert len(results) == 20
