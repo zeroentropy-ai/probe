@@ -13,6 +13,7 @@ from rich.table import Table
 
 import probe
 from probe.config import DEFAULT_MODELS, ProbeConfig, detect_provider, load_config, save_config
+from probe.indexer.refresh_gate import RefreshGate
 
 console = Console()
 PROBE_DIR_NAME = ".probe"
@@ -145,6 +146,32 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
     db.initialize()
     vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
     vector_store.load()
+
+    # Refresh-before-search: update index if files changed since last index.
+    gate = RefreshGate.from_env()
+    if gate.should_refresh():
+        from probe.indexer.pipeline import IndexPipeline
+        embedding_for_refresh, _ = _build_providers(config)
+        pipeline = IndexPipeline(
+            db=db, vector_store=vector_store,
+            embedding_provider=embedding_for_refresh,
+        )
+        try:
+            refresh_stats = pipeline.refresh_changed([Path.cwd()])
+            gate.mark()
+            total_changed = (
+                refresh_stats["added"] + refresh_stats["changed"] + refresh_stats["removed"]
+            )
+            if total_changed > 0:
+                console.print(
+                    f"[dim]Refreshed: +{refresh_stats['added']} "
+                    f"±{refresh_stats['changed']} -{refresh_stats['removed']} "
+                    f"({refresh_stats['elapsed_ms']}ms)[/dim]"
+                )
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning: refresh failed ({e}); using stale index.[/yellow]"
+            )
 
     embedding, reranker = _build_providers(config)
 
