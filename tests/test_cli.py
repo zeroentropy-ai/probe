@@ -39,11 +39,10 @@ class TestCLI:
 
     def test_search_calls_refresh_when_gate_allows(self, runner, monkeypatch, tmp_path):
         """When PROBE_REFRESH_TTL=0, every search invocation triggers refresh_changed."""
-        import os
         from unittest.mock import MagicMock, patch
 
-        os.environ["PROBE_REFRESH_TTL"] = "0"
-        os.environ["ZEROENTROPY_API_KEY"] = "test"
+        monkeypatch.setenv("PROBE_REFRESH_TTL", "0")
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "test")
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".probe").mkdir()
 

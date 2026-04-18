@@ -108,6 +108,10 @@ def test_probe_search_gate_persists_across_calls(tmp_path, monkeypatch):
     (tmp_path / ".probe").mkdir()
     monkeypatch.setenv("ZEROENTROPY_API_KEY", "test")
     monkeypatch.setenv("PROBE_REFRESH_TTL", "60")
+    # Pin monotonic clock so the gate's TTL check is deterministic regardless
+    # of how long the machine has been up (fresh CI runners start near zero).
+    now = [1_000_000.0]
+    monkeypatch.setattr("time.monotonic", lambda: now[0])
 
     server = create_mcp_server()
     tool = server._tool_manager._tools["probe_search"]
