@@ -21,25 +21,31 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 # 2. Install
 pip install probe-search
 
-# 3. Set your API key
-export ZEROENTROPY_API_KEY="ze_xxx"
+# 3. Register probe with Claude Code (one-time, machine-wide)
+probe install
 
-# 4. Index and search
+# Now open any project in Claude Code and ask a question —
+# probe will auto-index on first search and refresh on subsequent ones.
+```
+
+For CLI-only use:
+
+```bash
+export ZEROENTROPY_API_KEY="ze_xxx"
 probe index .
 probe search "how does authentication work"
 ```
 
-Or run without installing:
-
-```bash
-uvx probe-search search "how does authentication work"
-```
+The index auto-refreshes before each search; set `PROBE_REFRESH_TTL=0` to
+force refresh every time, or `-1` to disable refresh.
 
 ---
 
 ## MCP Server Setup (Claude Code, Cursor)
 
-Add a `.mcp.json` file to your project root:
+**Claude Code users**: `probe install` (see Quick Start) does this automatically.
+
+**For Cursor or advanced use**: add a `.mcp.json` file to your project root:
 
 ```json
 {
@@ -120,6 +126,7 @@ One query returns the design spec, the implementation code, and the architectura
 |---------|-------------|
 | `probe index [paths...]` | Index project files for semantic search |
 | `probe index --full` | Force full re-index (ignore file hashes) |
+| `probe install` | Register probe as a user-scope MCP server in Claude Code |
 | `probe search "query"` | Search project knowledge with natural language |
 | `probe search --top-k N` | Limit number of results (default: 10) |
 | `probe search --type code` | Filter by file type (markdown, code, pdf, text) |
@@ -130,6 +137,7 @@ One query returns the design spec, the implementation code, and the architectura
 | `probe config` | Show current provider configuration |
 | `probe init` | Auto-detect provider and save config |
 | `probe mcp` | Start MCP server (stdio transport) |
+| `probe uninstall [--purge]` | Unregister probe; `--purge` also deletes `.probe/` in cwd |
 
 ---
 
@@ -181,7 +189,7 @@ Documents are chunked and stored locally in `.probe/` (SQLite + numpy). Only chu
 
 ## What's NOT in v1
 
-- File system watcher for auto-reindexing on changes
+- Real-time filesystem watcher (refresh-before-search handles typical edit volumes fine)
 - Web sources (Notion, Confluence, Google Docs)
 - Git-aware context (commit history, blame)
 - Image/diagram understanding within PDFs
