@@ -1,7 +1,8 @@
 """Tests for the CLI interface."""
 
-from click.testing import CliRunner
 import pytest
+from click.testing import CliRunner
+
 from probe.cli import main
 
 
@@ -51,10 +52,24 @@ class TestCLI:
              patch("probe.indexer.pipeline.IndexPipeline.refresh_changed") as mock_refresh, \
              patch("probe.search.engine.ContextEngine.search") as mock_search, \
              patch("probe.store.database.ProbeDB.get_stats",
-                   return_value={"total_files": 1, "total_chunks": 1, "file_types": {}, "last_indexed": None}):
+                   return_value={"total_files": 1, "total_chunks": 1, "file_types": {},
+                                 "last_indexed": None}):
             mock_build.return_value = (MagicMock(), None)
             mock_refresh.return_value = {"added": 0, "changed": 0, "removed": 0, "elapsed_ms": 10}
-            mock_search.return_value = MagicMock(results=[], total_tokens=0, sources_searched=0, query="x")
+            mock_search.return_value = MagicMock(results=[], total_tokens=0,
+                                                  sources_searched=0, query="x")
 
             result = runner.invoke(main, ["search", "x"])
             assert mock_refresh.called, f"refresh_changed was not called. Output: {result.output}"
+
+    def test_install_exits_when_claude_not_on_path(self, runner, monkeypatch):
+        def mock_which(name):
+            return None if name == "claude" else "/usr/bin/" + name
+        monkeypatch.setattr("shutil.which", mock_which)
+        result = runner.invoke(main, ["install"])
+        assert result.exit_code == 1
+        assert "Claude Code CLI not found" in result.output
+
+    def test_install_command_exists(self, runner):
+        result = runner.invoke(main, ["install", "--help"])
+        assert result.exit_code == 0

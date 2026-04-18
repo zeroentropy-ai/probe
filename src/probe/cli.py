@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -311,3 +312,21 @@ def mcp():
     """Start the MCP server (stdio transport)."""
     from probe.mcp.server import run_mcp_server
     run_mcp_server()
+
+
+@main.command()
+@click.option("--api-key", default=None, help="ZeroEntropy API key (skip prompt).")
+@click.option("--no-embed-key", is_flag=True,
+              help="Register without embedding API key (rely on shell env).")
+@click.option("--force", is_flag=True, help="Skip already-installed confirmation.")
+def install(api_key, no_embed_key, force):
+    """Register probe as a user-scope MCP server in Claude Code."""
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        console.print(
+            "[red]Claude Code CLI not found.[/red] "
+            "Install it from the official Claude Code documentation, then rerun `probe install`."
+        )
+        sys.exit(1)
+
+    console.print("[bold]probe install — coming in the next tasks...[/bold]")
