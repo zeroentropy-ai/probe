@@ -56,3 +56,33 @@ class TestIndexPipeline:
     def test_vectors_saved(self, pipeline, fixtures_dir, tmp_probe_dir):
         pipeline.index([fixtures_dir])
         assert (tmp_probe_dir / "vectors.npy").exists()
+
+    def test_refresh_no_changes(self, pipeline, fixtures_dir, mock_embedding_provider):
+        pipeline.index([fixtures_dir])
+        mock_embedding_provider.embed.reset_mock()
+
+        stats = pipeline.refresh_changed([fixtures_dir])
+
+        assert stats["added"] == 0
+        assert stats["changed"] == 0
+        assert stats["removed"] == 0
+        assert "elapsed_ms" in stats
+        # Phase 2 never runs for unchanged files, so no new embed calls.
+        assert mock_embedding_provider.embed.call_count == 0
+
+    def test_refresh_detects_deleted_file(self, pipeline, fixtures_dir, tmp_path):
+        # Copy fixtures into a temp dir so we can delete from it safely
+        import shutil
+        work = tmp_path / "work"
+        shutil.copytree(fixtures_dir, work)
+        pipeline.index([work])
+        assert len(pipeline.db.list_files()) > 0
+
+        # Delete one file
+        target = work / "notes.txt"
+        target.unlink()
+
+        stats = pipeline.refresh_changed([work])
+        assert stats["removed"] == 1
+        paths = {f["path"] for f in pipeline.db.list_files()}
+        assert "notes.txt" not in paths

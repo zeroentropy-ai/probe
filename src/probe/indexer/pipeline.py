@@ -143,3 +143,71 @@ class IndexPipeline:
             "files_skipped": files_skipped,
             "chunks_created": chunks_created,
         }
+
+    def refresh_changed(self, paths: list[Path]) -> dict:
+        """Incrementally re-index files that changed since last index.
+
+        Two-phase: (1) cheap stat sweep to detect candidates, (2) hash confirm
+        and re-embed. Returns {added, changed, removed, elapsed_ms}."""
+        import time as _time
+        t0 = _time.monotonic()
+
+        files = discover_files(paths)
+        self.vector_store.load()
+
+        # Phase 1: stat sweep and bucket files.
+        disk_rel_paths: set[str] = set()
+        candidates: list[tuple[Path, str, str, int, int, str | None]] = []
+        # tuple: (file_path, rel_path, file_type, mtime_ns, size, existing_hash_or_None)
+
+        for file_path in files:
+            try:
+                rel_path = str(file_path.relative_to(Path.cwd()))
+            except ValueError:
+                rel_path = str(file_path)
+            disk_rel_paths.add(rel_path)
+
+            try:
+                stat = file_path.stat()
+            except FileNotFoundError:
+                continue
+
+            sig = self.db.get_file_signature(rel_path)
+            if sig is None:
+                # New file
+                candidates.append((
+                    file_path, rel_path, classify_file_type(file_path),
+                    stat.st_mtime_ns, stat.st_size, None,
+                ))
+                continue
+            existing_hash, existing_mtime, existing_size = sig
+            if existing_mtime == stat.st_mtime_ns and existing_size == stat.st_size:
+                continue  # unchanged — skip
+            candidates.append((
+                file_path, rel_path, classify_file_type(file_path),
+                stat.st_mtime_ns, stat.st_size, existing_hash,
+            ))
+
+        # Deletions
+        removed = 0
+        deleted_chunk_ids: set[int] = set()
+        for db_file in self.db.list_files():
+            if db_file["path"] not in disk_rel_paths:
+                deleted_chunk_ids.update(self.db.get_chunk_ids_for_file(db_file["path"]))
+                self.db.delete_file(db_file["path"])
+                removed += 1
+
+        if deleted_chunk_ids:
+            self.vector_store.delete(deleted_chunk_ids)
+
+        # Phase 2: not yet implemented (Task 5).
+        added = 0
+        changed = 0
+        # TEMP until Task 5: assume all candidates are "changed" with no real work done.
+        # (We intentionally leave this zero so Task 5 can flip it on when hashing is added.)
+
+        if deleted_chunk_ids:
+            self.vector_store.save()
+
+        elapsed_ms = int((_time.monotonic() - t0) * 1000)
+        return {"added": added, "changed": changed, "removed": removed, "elapsed_ms": elapsed_ms}
