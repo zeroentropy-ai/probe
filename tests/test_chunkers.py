@@ -1,7 +1,6 @@
 """Tests for smart chunking."""
 
-import pytest
-from probe.indexer.chunkers import chunk_markdown, chunk_code, chunk_text, chunk_pdf, chunk_content
+from probe.indexer.chunkers import chunk_code, chunk_content, chunk_markdown, chunk_pdf, chunk_text
 
 
 class TestMarkdownChunker:

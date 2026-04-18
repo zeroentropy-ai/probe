@@ -2,10 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-import yaml
-
-from probe.config import ProbeConfig, load_config, save_config, detect_provider
+from probe.config import ProbeConfig, detect_provider, load_config, save_config
 
 
 class TestConfig:

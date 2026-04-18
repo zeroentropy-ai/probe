@@ -1,8 +1,8 @@
 """Tests for content extractors."""
 
 from pathlib import Path
-import pytest
-from probe.indexer.extractors import extract_content, classify_file_type
+
+from probe.indexer.extractors import classify_file_type, extract_content
 
 
 class TestClassifyFileType:

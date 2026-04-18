@@ -1,8 +1,10 @@
 """Tests for file discovery."""
 
 from pathlib import Path
+
 import pytest
-from probe.indexer.discovery import discover_files, compute_file_hash
+
+from probe.indexer.discovery import compute_file_hash, discover_files
 
 
 @pytest.fixture
