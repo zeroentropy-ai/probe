@@ -1,21 +1,22 @@
 """Tests for the indexing pipeline."""
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
 from probe.indexer.pipeline import IndexPipeline
-from probe.store.database import ProbeDB
 from probe.search.vector import VectorStore
+from probe.store.database import ProbeDB
 
 
 @pytest.fixture
 def mock_embedding_provider():
     provider = MagicMock()
     provider.dimensions = 4
-    provider.embed.side_effect = lambda texts, **kw: np.random.randn(len(texts), 4).astype(np.float32)
+    provider.embed.side_effect = (
+        lambda texts, **kw: np.random.randn(len(texts), 4).astype(np.float32)
+    )
     return provider
 
 
@@ -24,7 +25,9 @@ def pipeline(tmp_probe_dir, mock_embedding_provider):
     db = ProbeDB(tmp_probe_dir / "probe.db")
     db.initialize()
     vector_store = VectorStore(tmp_probe_dir / "vectors.npy", dimensions=4)
-    return IndexPipeline(db=db, vector_store=vector_store, embedding_provider=mock_embedding_provider)
+    return IndexPipeline(
+        db=db, vector_store=vector_store, embedding_provider=mock_embedding_provider
+    )
 
 
 class TestIndexPipeline:
@@ -73,6 +76,7 @@ class TestIndexPipeline:
     def test_refresh_detects_deleted_file(self, pipeline, fixtures_dir, tmp_path):
         # Copy fixtures into a temp dir so we can delete from it safely
         import shutil
+
         work = tmp_path / "work"
         shutil.copytree(fixtures_dir, work)
         pipeline.index([work])
@@ -86,3 +90,65 @@ class TestIndexPipeline:
         assert stats["removed"] == 1
         paths = {f["path"] for f in pipeline.db.list_files()}
         assert "notes.txt" not in paths
+
+    def test_refresh_new_file(self, pipeline, fixtures_dir, tmp_path,
+                              mock_embedding_provider):
+        import shutil
+
+        work = tmp_path / "work"
+        shutil.copytree(fixtures_dir, work)
+        pipeline.index([work])
+
+        # Add a new file
+        (work / "new.md").write_text("# New\nSome content about fresh things.")
+        mock_embedding_provider.embed.reset_mock()
+
+        stats = pipeline.refresh_changed([work])
+        assert stats["added"] == 1
+        assert stats["changed"] == 0
+        paths = {f["path"] for f in pipeline.db.list_files()}
+        assert any(p.endswith("new.md") for p in paths)
+        assert mock_embedding_provider.embed.call_count >= 1
+
+    def test_refresh_edited_file(self, pipeline, fixtures_dir, tmp_path,
+                                 mock_embedding_provider):
+        import shutil
+        import time
+
+        work = tmp_path / "work"
+        shutil.copytree(fixtures_dir, work)
+        pipeline.index([work])
+
+        # Modify an existing file (content change)
+        target = work / "README.md"
+        time.sleep(0.01)  # ensure mtime advances on coarse filesystems
+        target.write_text(target.read_text() + "\n\nNew paragraph about something.")
+        mock_embedding_provider.embed.reset_mock()
+
+        stats = pipeline.refresh_changed([work])
+        assert stats["changed"] == 1
+        assert stats["added"] == 0
+        assert mock_embedding_provider.embed.call_count >= 1
+
+    def test_refresh_touched_file_not_reembedded(self, pipeline, fixtures_dir,
+                                                  tmp_path, mock_embedding_provider):
+        """mtime changes but content doesn't: hash confirms no real change, no embed."""
+        import os
+        import shutil
+        import time
+
+        work = tmp_path / "work"
+        shutil.copytree(fixtures_dir, work)
+        pipeline.index([work])
+
+        target = work / "README.md"
+        # Bump mtime without changing content
+        new_time = time.time() + 10
+        os.utime(target, (new_time, new_time))
+        mock_embedding_provider.embed.reset_mock()
+
+        stats = pipeline.refresh_changed([work])
+        # Phase 1 flags it, phase 2 confirms via hash, updates mtime, no embed.
+        assert stats["changed"] == 0
+        assert stats["added"] == 0
+        assert mock_embedding_provider.embed.call_count == 0

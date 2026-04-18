@@ -30,8 +30,7 @@ class IndexPipeline:
         """Index a single file: delete old chunks, extract, chunk, persist.
         Returns (new_chunk_texts, new_chunk_ids) so the caller can batch-embed.
         Raises on extract/chunk errors; caller decides what to do."""
-        # Remove any existing vectors for this file before re-adding
-        old_ids = self.db.get_chunk_ids_for_file(rel_path)
+        # Remove any existing DB rows for this file before re-adding
         self.db.delete_file(rel_path)
 
         content = extract_content(file_path)
@@ -200,13 +199,53 @@ class IndexPipeline:
         if deleted_chunk_ids:
             self.vector_store.delete(deleted_chunk_ids)
 
-        # Phase 2: not yet implemented (Task 5).
+        # Phase 2: hash-confirm each candidate and re-index if content actually changed.
         added = 0
         changed = 0
-        # TEMP until Task 5: assume all candidates are "changed" with no real work done.
-        # (We intentionally leave this zero so Task 5 can flip it on when hashing is added.)
+        new_chunk_texts: list[str] = []
+        new_chunk_ids: list[int] = []
+        candidate_deleted_ids: set[int] = set()
 
-        if deleted_chunk_ids:
+        for file_path, rel_path, file_type, mtime_ns, size, existing_hash in candidates:
+            try:
+                file_hash = compute_file_hash(file_path)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            if existing_hash is not None and file_hash == existing_hash:
+                # Metadata-only change (e.g., `touch`): update sig, skip re-embed.
+                self.db.update_file_signature(rel_path, mtime_ns, size)
+                continue
+
+            # Real content change (or new file): re-index.
+            old_ids = self.db.get_chunk_ids_for_file(rel_path)
+            candidate_deleted_ids.update(old_ids)
+
+            texts, ids = self._index_file(
+                file_path, rel_path, file_type, file_hash,
+                mtime_ns=mtime_ns, size=size,
+            )
+            if not texts:
+                continue
+            new_chunk_texts.extend(texts)
+            new_chunk_ids.extend(ids)
+            if existing_hash is None:
+                added += 1
+            else:
+                changed += 1
+
+        if candidate_deleted_ids:
+            self.vector_store.delete(candidate_deleted_ids)
+
+        # Batch-embed new chunks
+        if new_chunk_texts:
+            for i in range(0, len(new_chunk_texts), EMBED_BATCH_SIZE):
+                batch_texts = new_chunk_texts[i:i + EMBED_BATCH_SIZE]
+                batch_ids = new_chunk_ids[i:i + EMBED_BATCH_SIZE]
+                vectors = self.embedding_provider.embed(batch_texts, input_type="document")
+                self.vector_store.add(batch_ids, vectors)
+
+        if deleted_chunk_ids or candidate_deleted_ids or new_chunk_texts:
             self.vector_store.save()
 
         elapsed_ms = int((_time.monotonic() - t0) * 1000)
