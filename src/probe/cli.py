@@ -169,10 +169,14 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
                     f"({refresh_stats['elapsed_ms']}ms)[/dim]"
                 )
         except Exception as e:
+            from rich.markup import escape
             console.print(
-                f"[yellow]Warning: refresh failed ({e}); using stale index.[/yellow]"
+                f"[yellow]Warning: refresh failed ({escape(str(e))}); using stale index.[/yellow]"
             )
 
+    # Note: providers are built twice on search — once for the refresh pass above
+    # and once here for the search. Provider constructors are cheap; keeping the
+    # two paths independent avoids having the refresh block reach into search state.
     embedding, reranker = _build_providers(config)
 
     engine = ContextEngine(db=db, vector_store=vector_store,
