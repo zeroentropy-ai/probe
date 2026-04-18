@@ -107,9 +107,10 @@ def _build_providers(config: ProbeConfig):
 MCP_INSTRUCTIONS = """Use this server to search project knowledge — documentation, design specs, \
 ADRs, runbooks, API references, and source code — using semantic search with reranking.
 
-IMPORTANT: On first use in a project, call probe_status first. If it shows 0 indexed files, \
-call probe_index to build the search index before searching. This only needs to happen once \
-per project.
+IMPORTANT: probe auto-indexes on first search and incrementally refreshes on every \
+subsequent search (within a debounce window), so you normally do not need to call \
+probe_index manually. Every probe_search response includes a `refreshed` field with \
+counts of files that were newly indexed, changed, or removed.
 
 ALWAYS use probe_search BEFORE reading individual files or grepping when you need to:
 - Understand how something works in the project
@@ -136,23 +137,40 @@ def create_mcp_server() -> FastMCP:
         """Search project knowledge (docs, specs, code) and return curated, reranked context.
         Use this when you need to understand how something works, find requirements,
         or locate relevant code and documentation."""
-        # Auto-index if nothing is indexed yet
-        stats = state.db.get_stats()
-        if stats["total_files"] == 0:
-            from probe.indexer.pipeline import IndexPipeline
+        from probe.indexer.pipeline import IndexPipeline
+        from probe.indexer.refresh_gate import RefreshGate
 
-            config = state.config
-            embedding, _ = _build_providers(config)
-            vector_store = VectorStore(
-                state.probe_dir / "vectors.npy",
-                dimensions=config.embedding_dimensions,
-            )
-            pipeline = IndexPipeline(
-                db=state.db, vector_store=vector_store,
-                embedding_provider=embedding,
-            )
-            pipeline.index([Path.cwd()])
-            state.invalidate()
+        config = state.config
+        vector_store = VectorStore(
+            state.probe_dir / "vectors.npy",
+            dimensions=config.embedding_dimensions,
+        )
+
+        # Unified refresh (replaces the old "auto-index if empty" path — when the
+        # DB is empty, every file is "new" so phase 2 indexes the whole project).
+        refreshed_info: dict = {"added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0}
+        gate = RefreshGate.from_env()
+        if gate.should_refresh():
+            try:
+                embedding_for_refresh, _ = _build_providers(config)
+                pipeline = IndexPipeline(
+                    db=state.db, vector_store=vector_store,
+                    embedding_provider=embedding_for_refresh,
+                )
+                refreshed_info = pipeline.refresh_changed([Path.cwd()])
+                gate.mark()
+                total_changed = (
+                    refreshed_info["added"]
+                    + refreshed_info["changed"]
+                    + refreshed_info["removed"]
+                )
+                if total_changed > 0:
+                    state.invalidate()
+            except Exception as e:
+                refreshed_info = {
+                    "added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0,
+                    "error": str(e),
+                }
 
         engine = state.get_engine()
         response = engine.search(
@@ -169,6 +187,7 @@ def create_mcp_server() -> FastMCP:
             ],
             "total_tokens": response.total_tokens,
             "sources_searched": response.sources_searched,
+            "refreshed": refreshed_info,
         }, indent=2)
 
     @server.tool()
