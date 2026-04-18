@@ -9,6 +9,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from probe.config import ProbeConfig, load_config
+from probe.indexer.refresh_gate import RefreshGate
 from probe.providers.base import EmbeddingProvider, RerankProvider
 from probe.search.engine import ContextEngine
 from probe.search.vector import VectorStore
@@ -25,12 +26,17 @@ class _ServerState:
         self._db: ProbeDB | None = None
         self._config: ProbeConfig | None = None
         self._project_root: Path = Path.cwd()
+        self._refresh_gate: RefreshGate = RefreshGate.from_env()
 
     @property
     def probe_dir(self) -> Path:
         d = self._project_root / PROBE_DIR_NAME
         d.mkdir(exist_ok=True)
         return d
+
+    @property
+    def refresh_gate(self) -> RefreshGate:
+        return self._refresh_gate
 
     @property
     def config(self) -> ProbeConfig:
@@ -137,8 +143,9 @@ def create_mcp_server() -> FastMCP:
         """Search project knowledge (docs, specs, code) and return curated, reranked context.
         Use this when you need to understand how something works, find requirements,
         or locate relevant code and documentation."""
+        import time as _time
+
         from probe.indexer.pipeline import IndexPipeline
-        from probe.indexer.refresh_gate import RefreshGate
 
         config = state.config
         vector_store = VectorStore(
@@ -149,8 +156,9 @@ def create_mcp_server() -> FastMCP:
         # Unified refresh (replaces the old "auto-index if empty" path — when the
         # DB is empty, every file is "new" so phase 2 indexes the whole project).
         refreshed_info: dict = {"added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0}
-        gate = RefreshGate.from_env()
+        gate = state.refresh_gate
         if gate.should_refresh():
+            t_refresh = _time.monotonic()
             try:
                 embedding_for_refresh, _ = _build_providers(config)
                 pipeline = IndexPipeline(
@@ -167,11 +175,16 @@ def create_mcp_server() -> FastMCP:
                 if total_changed > 0:
                     state.invalidate()
             except Exception as e:
+                elapsed_ms = int((_time.monotonic() - t_refresh) * 1000)
                 refreshed_info = {
-                    "added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0,
+                    "added": 0, "changed": 0, "removed": 0, "elapsed_ms": elapsed_ms,
                     "error": str(e),
                 }
 
+        # Note: providers for search are built lazily inside state.get_engine().
+        # When refresh ran, it built its own provider pair above; intentional
+        # duplication keeps the refresh block self-contained (see cli.py for the
+        # parallel comment).
         engine = state.get_engine()
         response = engine.search(
             query=query, top_k=top_k, max_tokens=max_tokens, file_types=file_types,
