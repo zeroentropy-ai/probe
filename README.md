@@ -189,7 +189,6 @@ Documents are chunked and stored locally in `.probe/` (SQLite + numpy). Only chu
 
 ## What's NOT in v1
 
-- Real-time filesystem watcher (refresh-before-search handles typical edit volumes fine)
 - Web sources (Notion, Confluence, Google Docs)
 - Git-aware context (commit history, blame)
 - Image/diagram understanding within PDFs
