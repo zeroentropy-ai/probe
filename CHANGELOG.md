@@ -2,6 +2,11 @@
 
 All notable changes to probe are documented here.
 
+## 0.2.1 — 2026-05-27
+
+### Fixed
+- MCP searches and indexing now fail fast with setup guidance when the embedding provider API key is missing, instead of surfacing a generic SDK connection error.
+
 ## 0.2.0 — 2026-04-17
 
 ### Added

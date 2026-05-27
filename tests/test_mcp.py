@@ -4,8 +4,10 @@ import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
-from probe.mcp.server import create_mcp_server
+from probe.config import ProbeConfig
+from probe.mcp.server import _build_providers, create_mcp_server
 
 
 class TestMCPServer:
@@ -140,3 +142,11 @@ def test_probe_search_gate_persists_across_calls(tmp_path, monkeypatch):
     assert mock_refresh.call_count == 1, (
         f"Expected gate to debounce second call; got {mock_refresh.call_count} refresh calls"
     )
+
+
+def test_mcp_embedding_provider_requires_api_key(monkeypatch):
+    """MCP should fail fast with setup guidance instead of surfacing SDK connection errors."""
+    monkeypatch.delenv("ZEROENTROPY_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="ZEROENTROPY_API_KEY not set"):
+        _build_providers(ProbeConfig())

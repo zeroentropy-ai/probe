@@ -72,26 +72,32 @@ class _ServerState:
 
 def _build_providers(config: ProbeConfig):
     """Build providers from config (shared with CLI)."""
+    from probe.config import PROVIDER_ENV_VARS
+
     embedding: EmbeddingProvider
     reranker: RerankProvider | None = None
+    env_var = PROVIDER_ENV_VARS.get(config.embedding_provider, "")
+    api_key = os.environ.get(env_var, "") if env_var else ""
+    if not api_key:
+        raise ValueError(
+            f"{env_var} not set. Required for {config.embedding_provider} embeddings. "
+            f"Run `probe install` with an API key, or set {env_var} in the MCP server environment."
+        )
 
     if config.embedding_provider == "zeroentropy":
         from probe.providers.zeroentropy import ZeroEntropyEmbedding
         embedding = ZeroEntropyEmbedding(
-            os.environ.get("ZEROENTROPY_API_KEY", ""),
-            config.embedding_model, config.embedding_dimensions,
+            api_key, config.embedding_model, config.embedding_dimensions,
         )
     elif config.embedding_provider == "openai":
         from probe.providers.openai import OpenAIEmbedding
         embedding = OpenAIEmbedding(
-            os.environ.get("OPENAI_API_KEY", ""),
-            config.embedding_model, config.embedding_dimensions,
+            api_key, config.embedding_model, config.embedding_dimensions,
         )
     elif config.embedding_provider == "cohere":
         from probe.providers.cohere import CohereEmbedding
         embedding = CohereEmbedding(
-            os.environ.get("COHERE_API_KEY", ""),
-            config.embedding_model, config.embedding_dimensions,
+            api_key, config.embedding_model, config.embedding_dimensions,
         )
     else:
         raise ValueError(f"Unknown embedding provider: {config.embedding_provider}")

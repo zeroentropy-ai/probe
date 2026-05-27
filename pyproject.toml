@@ -1,7 +1,8 @@
 [project]
 name = "probe-search"
-version = "0.2.0"
+version = "0.2.1"
 description = "AI Agent Context Engine — give your coding agent a brain beyond code"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
@@ -37,6 +38,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/probe"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/uv.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
