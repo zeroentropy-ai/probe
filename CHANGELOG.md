@@ -2,6 +2,12 @@
 
 All notable changes to probe are documented here.
 
+## 0.2.2 — 2026-05-27
+
+### Changed
+- Clarified Claude Code installation guidance: use a durable tool install, set `ZEROENTROPY_API_KEY`, verify with `claude mcp get probe`, approve the first probe tool call, and add `.probe/` to `.gitignore`.
+- Fixed the advanced `uvx` MCP example to use the published `probe` executable from the `probe-search` package.
+
 ## 0.2.1 — 2026-05-27
 
 ### Fixed

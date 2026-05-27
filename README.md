@@ -18,8 +18,9 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 
 ```bash
 # 1. Get a free API key at https://dashboard.zeroentropy.dev
-# 2. Install probe
-pip install probe-search
+# 2. Install probe as a durable command
+uv tool install probe-search
+# or: pipx install probe-search
 
 # 3. Set your API key
 export ZEROENTROPY_API_KEY="ze_xxx"
@@ -27,13 +28,28 @@ export ZEROENTROPY_API_KEY="ze_xxx"
 # 4. Register probe with Claude Code (one-time, machine-wide)
 probe install
 
+# 5. Verify Claude Code sees probe
+claude mcp get probe
+
 # Now open any project in Claude Code and ask a question —
 # probe will auto-index on first search and refresh on subsequent ones.
 ```
 
+`probe install` stores the path to the `probe` executable in Claude Code. Use
+`uv tool install` or `pipx` so that path stays valid. If you install probe in a
+temporary virtual environment, rerun `probe install` after recreating that
+environment.
+
+Claude Code may ask you to approve probe the first time it calls `probe_search`.
+Allow it once, and future searches will use the same MCP server.
+
+probe stores local index data in `.probe/`; add `.probe/` to your project's
+`.gitignore`.
+
 For CLI-only use:
 
 ```bash
+pip install probe-search
 export ZEROENTROPY_API_KEY="ze_xxx"
 probe index .
 probe search "how does authentication work"
@@ -55,7 +71,7 @@ force refresh every time, or `-1` to disable refresh.
   "mcpServers": {
     "probe": {
       "command": "uvx",
-      "args": ["probe-search", "mcp"],
+      "args": ["--from", "probe-search", "probe", "mcp"],
       "env": {
         "ZEROENTROPY_API_KEY": "ze_xxx"
       }
@@ -66,7 +82,8 @@ force refresh every time, or `-1` to disable refresh.
 
 This works with Claude Code, Cursor, and any MCP-compatible agent. No `pip install` required -- `uvx` handles it.
 
-On first use, probe automatically indexes your project. No manual setup needed -- just ask your agent a question and it works.
+On first use, probe automatically indexes your project. Your agent may ask you
+to approve the probe tool before the first search.
 
 Your agent gains four tools:
 
