@@ -22,9 +22,10 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 ## What You Get
 
 - One-command Claude Code setup with `probe install`
-- Automatic first-use indexing and refresh-before-search
+- Automatic first-use indexing with incremental refresh-before-search
 - Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
 - Cross-encoder reranking with `zerank-2`
+- `.gitignore` and `.probeignore` aware file discovery
 - Local index storage in `.probe/`
 - MCP tools for Claude Code, Cursor, and other MCP-compatible agents
 
@@ -105,10 +106,43 @@ Your agent gains four tools:
 
 | Tool | What it does |
 |------|-------------|
-| `probe_search` | Semantic search across docs and code with reranking |
-| `probe_index` | Index or re-index project files |
+| `probe_search` | Semantic search across docs and code with automatic refresh and reranking |
+| `probe_index` | Index or re-index project files, skipping unchanged files by default |
 | `probe_status` | Show what's indexed |
 | `probe_read` | Read a specific file by path |
+
+---
+
+## Index Freshness
+
+probe keeps the local index current without running a background daemon.
+
+On the first `probe_search`, an empty project index is created automatically.
+Before later CLI or MCP searches, probe checks for added, changed, and deleted
+files, then refreshes only the affected chunks. The refresh pass uses a fast
+mtime/size sweep, hash-confirms likely content changes, removes deleted files
+from SQLite and the vector store, and skips files that were only touched without
+content changes.
+
+Refresh checks are debounced for 5 seconds by default. Set
+`PROBE_REFRESH_TTL=0` to check before every search, or `PROBE_REFRESH_TTL=-1`
+to disable automatic refresh. If refresh fails, probe reports the error and
+continues searching the last good local index.
+
+---
+
+## Supported Files
+
+probe indexes Markdown, MDX, plain text, reStructuredText, AsciiDoc, TeX, YAML,
+JSON, PDFs, and code in Python, JavaScript, TypeScript, TSX, JSX, Go, Rust, and
+Java.
+
+File discovery respects root `.gitignore` and `.probeignore` files. It also
+always skips `.git/`, `.probe/`, `__pycache__/`, `.venv/`, and `*.pyc`.
+
+Chunks keep useful location metadata: Markdown header paths, code symbol names,
+and PDF page numbers. Search results include that metadata so agents can cite
+the right file section instead of dumping whole files into context.
 
 ---
 
@@ -168,32 +202,18 @@ One query returns the design spec, the implementation code, and the architectura
 | `probe search --type code` | Filter by file type (markdown, code, pdf, text) |
 | `probe search --no-rerank` | Skip reranking (faster, lower quality) |
 | `probe search --max-tokens N` | Token budget for results (default: 4096) |
-| `probe status` | Show index stats and provider config |
+| `probe status` | Show index stats and model config |
 | `probe list` | List all indexed files |
-| `probe config` | Show current provider configuration |
-| `probe init` | Auto-detect provider and save config |
+| `probe config` | Show current model configuration |
+| `probe init` | Create local config from environment |
 | `probe mcp` | Start MCP server (stdio transport) |
 | `probe uninstall [--purge]` | Unregister probe; `--purge` also deletes `.probe/` in cwd |
 
 ---
 
-## Multi-Provider Support
-
-probe defaults to ZeroEntropy but works with other providers:
-
-| Provider | Embedding | Reranker | Install |
-|----------|-----------|----------|---------|
-| **[ZeroEntropy](https://www.zeroentropy.dev)** (default) | zembed-1 | zerank-2 | included |
-| OpenAI | text-embedding-3-large | -- | `pip install "probe-search[openai]"` |
-| Cohere | embed-v4.0 | rerank-v3.5 | `pip install "probe-search[cohere]"` |
-
-Set the corresponding API key (`ZEROENTROPY_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY`) and run `probe init`. You can mix providers -- for example, OpenAI for embeddings with ZeroEntropy for reranking.
-
----
-
 ## Why ZeroEntropy?
 
-[zembed-1](https://www.zeroentropy.dev/articles/introducing-zembed-1-the-worlds-best-multilingual-text-embedding-model) is a 4B-parameter open-weight embedding model that outperforms OpenAI, Cohere, and Voyage across nine domains including code, legal, finance, and healthcare. Combined with [zerank-2](https://www.zeroentropy.dev/articles/zerank-2-advanced-instruction-following-multilingual-reranker) for cross-encoder reranking, it delivers the best retrieval quality available.
+[zembed-1](https://www.zeroentropy.dev/articles/introducing-zembed-1-the-worlds-best-multilingual-text-embedding-model) is a 4B-parameter open-weight embedding model built for high-quality retrieval across domains including code, legal, finance, and healthcare. Combined with [zerank-2](https://www.zeroentropy.dev/articles/zerank-2-advanced-instruction-following-multilingual-reranker) for cross-encoder reranking, it gives probe strong semantic recall and precise final ranking.
 
 Pricing: $0.05 per 1M tokens for embeddings, $0.025 per 1M tokens for reranking. [Free trial available](https://www.zeroentropy.dev/pricing).
 
@@ -228,6 +248,7 @@ Documents are chunked and stored locally in `.probe/` (SQLite + numpy). Only chu
 - Web sources (Notion, Confluence, Google Docs)
 - Git-aware context (commit history, blame)
 - Image/diagram understanding within PDFs
+- Background filesystem watcher; probe refreshes before search instead
 - Custom chunking strategies
 
 ---
