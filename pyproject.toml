@@ -1,6 +1,6 @@
 [project]
 name = "probe-search"
-version = "0.2.3"
+version = "0.2.4"
 description = "AI Agent Context Engine — give your coding agent a brain beyond code"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,6 +50,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]

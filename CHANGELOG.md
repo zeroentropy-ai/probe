@@ -2,6 +2,11 @@
 
 All notable changes to probe are documented here.
 
+## 0.2.4 — 2026-05-27
+
+### Fixed
+- Restored Python 3.10 CI compatibility for release metadata tests.
+
 ## 0.2.3 — 2026-05-27
 
 ### Added
