@@ -49,6 +49,9 @@ Claude Code will ask for your ZeroEntropy API key during plugin install. The
 plugin starts probe with `uvx --from probe-search==0.2.4 probe mcp`, so you do
 not need to install probe separately for Claude Code.
 
+If you use the `claude plugin install` shell command instead of the `/plugin`
+slash command, export `ZEROENTROPY_API_KEY` before starting Claude Code.
+
 Open any project in Claude Code and ask a question. probe will auto-index on
 first search, refresh on subsequent searches, and guide Claude to call
 `probe_search` before broad file sweeps.

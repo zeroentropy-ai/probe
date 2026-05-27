@@ -84,4 +84,5 @@ def test_readme_documents_plugin_install_path():
     assert "/plugin marketplace add zeroentropy-ai/probe" in readme
     assert "/plugin install probe@zeroentropy" in readme
     assert f"uvx --from probe-search=={PROJECT_VERSION} probe mcp" in readme
+    assert "If you use the `claude plugin install` shell command" in readme
     assert "ZeroEntropy API key" in readme
