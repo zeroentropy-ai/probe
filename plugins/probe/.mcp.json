@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "probe": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "probe-search==0.2.4",
+        "probe",
+        "mcp"
+      ],
+      "env": {
+        "ZEROENTROPY_API_KEY": "${user_config.zeroentropy_api_key}"
+      }
+    }
+  }
+}

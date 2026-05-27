@@ -1,0 +1,31 @@
+{
+  "name": "probe",
+  "displayName": "probe",
+  "version": "0.2.4",
+  "description": "Use probe to search indexed project knowledge from docs and code through MCP.",
+  "author": {
+    "name": "ZeroEntropy",
+    "email": "founders@zeroentropy.dev",
+    "url": "https://www.zeroentropy.dev"
+  },
+  "homepage": "https://github.com/zeroentropy-ai/probe#readme",
+  "repository": "https://github.com/zeroentropy-ai/probe",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "semantic-search",
+    "codebase-search",
+    "claude-code",
+    "zeroentropy"
+  ],
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "zeroentropy_api_key": {
+      "type": "string",
+      "title": "ZeroEntropy API key",
+      "description": "API key used by probe for embeddings and reranking.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

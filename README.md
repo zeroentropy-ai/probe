@@ -21,7 +21,8 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 
 ## What You Get
 
-- One-command Claude Code setup with `probe install`
+- Claude Code plugin that bundles the MCP server and usage skill
+- One-command manual Claude Code setup with `probe install`
 - Automatic first-use indexing with incremental refresh-before-search
 - Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
 - Cross-encoder reranking with `zerank-2`
@@ -32,6 +33,30 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 ---
 
 ## Quick Start
+
+### Claude Code plugin (recommended)
+
+Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>. Then run
+these commands inside Claude Code:
+
+```text
+/plugin marketplace add zeroentropy-ai/probe --sparse .claude-plugin plugins
+/plugin install probe@zeroentropy
+/reload-plugins
+```
+
+Claude Code will ask for your ZeroEntropy API key during plugin install. The
+plugin starts probe with `uvx --from probe-search==0.2.4 probe mcp`, so you do
+not need to install probe separately for Claude Code.
+
+Open any project in Claude Code and ask a question. probe will auto-index on
+first search, refresh on subsequent searches, and guide Claude to call
+`probe_search` before broad file sweeps.
+
+The plugin marketplace is published from this repo at
+`.claude-plugin/marketplace.json`.
+
+### Manual CLI/MCP setup
 
 ```bash
 # 1. Get a free API key at https://dashboard.zeroentropy.dev
@@ -79,7 +104,9 @@ force refresh every time, or `-1` to disable refresh.
 
 ## MCP Server Setup (Claude Code, Cursor)
 
-**Claude Code users**: `probe install` (see Quick Start) does this automatically.
+**Claude Code users**: the plugin in Quick Start is the best default. Use
+`probe install` if you prefer direct user-scope MCP registration without a
+plugin.
 
 **For Cursor or advanced use**: add a `.mcp.json` file to your project root:
 

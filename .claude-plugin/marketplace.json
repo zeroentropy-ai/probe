@@ -1,0 +1,32 @@
+{
+  "name": "zeroentropy",
+  "owner": {
+    "name": "ZeroEntropy",
+    "email": "founders@zeroentropy.dev"
+  },
+  "description": "Claude Code plugins from ZeroEntropy.",
+  "plugins": [
+    {
+      "name": "probe",
+      "displayName": "probe",
+      "source": "./plugins/probe",
+      "description": "Search project docs and code with probe's MCP server before broad file sweeps.",
+      "category": "Developer Tools",
+      "tags": [
+        "mcp",
+        "search",
+        "codebase",
+        "documentation",
+        "zeroentropy"
+      ],
+      "repository": "https://github.com/zeroentropy-ai/probe",
+      "homepage": "https://github.com/zeroentropy-ai/probe#readme",
+      "license": "MIT",
+      "author": {
+        "name": "ZeroEntropy",
+        "email": "founders@zeroentropy.dev",
+        "url": "https://www.zeroentropy.dev"
+      }
+    }
+  ]
+}
