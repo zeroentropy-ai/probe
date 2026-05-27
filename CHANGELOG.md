@@ -2,6 +2,12 @@
 
 All notable changes to probe are documented here.
 
+## 0.2.3 — 2026-05-27
+
+### Added
+- PyPI discovery metadata, project URLs, and public contributor/release guidance.
+- CI packaging smoke tests and a guarded Trusted Publishing workflow for PyPI releases from `main` or `master`.
+
 ## 0.2.2 — 2026-05-27
 
 ### Changed

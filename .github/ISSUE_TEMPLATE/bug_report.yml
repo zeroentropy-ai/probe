@@ -1,0 +1,30 @@
+name: Bug report
+description: Report something that is broken or confusing
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: probe version
+      placeholder: "probe --version"
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Install probe with ...
+        2. Run ...
+        3. See ...
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "OS, Python version, Claude Code/Cursor version"

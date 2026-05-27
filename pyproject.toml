@@ -1,12 +1,35 @@
 [project]
 name = "probe-search"
-version = "0.2.2"
+version = "0.2.3"
 description = "AI Agent Context Engine — give your coding agent a brain beyond code"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
     { name = "ZeroEntropy", email = "founders@zeroentropy.dev" },
+]
+keywords = [
+    "agent-context",
+    "claude-code",
+    "coding-agent",
+    "mcp",
+    "rag",
+    "semantic-search",
+    "zeroentropy",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
     "click>=8.0",
@@ -31,6 +54,12 @@ dev = [
 
 [project.scripts]
 probe = "probe.cli:main"
+
+[project.urls]
+Homepage = "https://www.zeroentropy.dev"
+Repository = "https://github.com/zeroentropy-ai/probe"
+Issues = "https://github.com/zeroentropy-ai/probe/issues"
+Changelog = "https://github.com/zeroentropy-ai/probe/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

@@ -2,6 +2,11 @@
 
 **Give your AI agent a brain beyond code.**
 
+[![CI](https://github.com/zeroentropy-ai/probe/actions/workflows/ci.yml/badge.svg)](https://github.com/zeroentropy-ai/probe/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/probe-search.svg)](https://pypi.org/project/probe-search/)
+[![Python](https://img.shields.io/pypi/pyversions/probe-search.svg)](https://pypi.org/project/probe-search/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 probe is a CLI tool and MCP server that indexes your project's documentation, specs, and code, then serves curated, reranked context to AI coding agents in milliseconds.
 
 ---
@@ -11,6 +16,17 @@ probe is a CLI tool and MCP server that indexes your project's documentation, sp
 AI coding agents waste time searching. When you ask Claude Code or Cursor "how does our auth flow work?", they `grep` through files, read them one by one, and piece together an answer over multiple tool calls. On a large project with docs, specs, ADRs, and runbooks, this takes 30-60 seconds and often misses the most relevant context entirely.
 
 probe makes this instant. It indexes everything -- markdown docs, code, PDFs, plain text -- into a hybrid search engine powered by [ZeroEntropy's](https://www.zeroentropy.dev) state-of-the-art embedding and reranking models. One query, one API call, sub-second results with the best context from docs AND code ranked together.
+
+---
+
+## What You Get
+
+- One-command Claude Code setup with `probe install`
+- Automatic first-use indexing and refresh-before-search
+- Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
+- Cross-encoder reranking with `zerank-2`
+- Local index storage in `.probe/`
+- MCP tools for Claude Code, Cursor, and other MCP-compatible agents
 
 ---
 
