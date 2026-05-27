@@ -18,10 +18,13 @@ probe makes this instant. It indexes everything -- markdown docs, code, PDFs, pl
 
 ```bash
 # 1. Get a free API key at https://dashboard.zeroentropy.dev
-# 2. Install
+# 2. Install probe
 pip install probe-search
 
-# 3. Register probe with Claude Code (one-time, machine-wide)
+# 3. Set your API key
+export ZEROENTROPY_API_KEY="ze_xxx"
+
+# 4. Register probe with Claude Code (one-time, machine-wide)
 probe install
 
 # Now open any project in Claude Code and ask a question —
