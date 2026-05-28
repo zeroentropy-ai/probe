@@ -152,3 +152,32 @@ class TestIndexPipeline:
         assert stats["changed"] == 0
         assert stats["added"] == 0
         assert mock_embedding_provider.embed.call_count == 0
+
+    def test_root_dir_stores_project_relative_paths_when_cwd_differs(
+        self, tmp_path, mock_embedding_provider, monkeypatch,
+    ):
+        """MCP can launch outside the project but still index project-relative paths."""
+        launch_dir = tmp_path / "launcher"
+        launch_dir.mkdir()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "docs").mkdir()
+        (project_dir / "docs" / "guide.md").write_text("# Guide\n\nProject setup details.")
+        probe_dir = project_dir / ".probe"
+        probe_dir.mkdir()
+
+        monkeypatch.chdir(launch_dir)
+        db = ProbeDB(probe_dir / "probe.db")
+        db.initialize()
+        vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=4)
+        pipeline = IndexPipeline(
+            db=db,
+            vector_store=vector_store,
+            embedding_provider=mock_embedding_provider,
+            root_dir=project_dir,
+        )
+
+        stats = pipeline.index([project_dir])
+
+        assert stats["files_indexed"] == 1
+        assert {f["path"] for f in db.list_files()} == {"docs/guide.md"}

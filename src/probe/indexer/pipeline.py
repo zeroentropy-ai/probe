@@ -18,10 +18,18 @@ class IndexPipeline:
     def __init__(
         self, db: ProbeDB, vector_store: VectorStore,
         embedding_provider: EmbeddingProvider,
+        root_dir: Path | None = None,
     ):
         self.db = db
         self.vector_store = vector_store
         self.embedding_provider = embedding_provider
+        self.root_dir = (root_dir or Path.cwd()).resolve()
+
+    def _relative_path(self, file_path: Path) -> str:
+        try:
+            return str(file_path.resolve().relative_to(self.root_dir))
+        except ValueError:
+            return str(file_path)
 
     def _index_file(
         self, file_path: Path, rel_path: str, file_type: str,
@@ -80,10 +88,7 @@ class IndexPipeline:
         # Clean up files that no longer exist on disk
         disk_rel_paths: set[str] = set()
         for file_path in files:
-            try:
-                disk_rel_paths.add(str(file_path.relative_to(Path.cwd())))
-            except ValueError:
-                disk_rel_paths.add(str(file_path))
+            disk_rel_paths.add(self._relative_path(file_path))
 
         for db_file in self.db.list_files():
             if db_file["path"] not in disk_rel_paths:
@@ -97,10 +102,7 @@ class IndexPipeline:
             file_type = classify_file_type(file_path)
             stat = file_path.stat()
 
-            try:
-                rel_path = str(file_path.relative_to(Path.cwd()))
-            except ValueError:
-                rel_path = str(file_path)
+            rel_path = self._relative_path(file_path)
 
             if not full:
                 existing_hash = self.db.get_file_hash(rel_path)
@@ -162,10 +164,7 @@ class IndexPipeline:
         # tuple: (file_path, rel_path, file_type, mtime_ns, size, existing_hash_or_None)
 
         for file_path in files:
-            try:
-                rel_path = str(file_path.relative_to(Path.cwd()))
-            except ValueError:
-                rel_path = str(file_path)
+            rel_path = self._relative_path(file_path)
             disk_rel_paths.add(rel_path)
 
             try:

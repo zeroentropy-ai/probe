@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from urllib.parse import unquote
 
 from mcp.server.fastmcp import FastMCP
 
@@ -18,6 +19,16 @@ from probe.store.database import ProbeDB
 PROBE_DIR_NAME = ".probe"
 
 
+def _resolve_project_root() -> Path:
+    """Resolve the project root Claude Code intended this server to serve."""
+    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env_root:
+        candidate = Path(env_root).expanduser()
+        if candidate.is_dir():
+            return candidate.resolve()
+    return Path.cwd().resolve()
+
+
 class _ServerState:
     """Lazy-initialized shared state for the MCP server."""
 
@@ -25,8 +36,12 @@ class _ServerState:
         self._engine: ContextEngine | None = None
         self._db: ProbeDB | None = None
         self._config: ProbeConfig | None = None
-        self._project_root: Path = Path.cwd()
+        self._project_root: Path = _resolve_project_root()
         self._refresh_gate: RefreshGate = RefreshGate.from_env()
+
+    @property
+    def project_root(self) -> Path:
+        return self._project_root
 
     @property
     def probe_dir(self) -> Path:
@@ -141,6 +156,81 @@ def create_mcp_server() -> FastMCP:
     server = FastMCP("probe", instructions=MCP_INSTRUCTIONS)
     state = _ServerState()
 
+    def read_project_file(
+        file_path: str,
+        line_start: int | None = None,
+        line_end: int | None = None,
+        context_lines: int = 0,
+    ) -> str:
+        target = Path(file_path)
+        if not target.is_absolute():
+            target = state.project_root / file_path
+
+        # Security: restrict reads to the project directory.
+        try:
+            target = target.resolve()
+            target.relative_to(state.project_root)
+        except ValueError:
+            return json.dumps({"error": "Access denied: path is outside project directory"})
+
+        if not target.exists():
+            return json.dumps({"error": f"File not found: {file_path}"})
+        content = target.read_text(encoding="utf-8", errors="replace")
+        if line_start is None and line_end is None:
+            return content
+
+        lines = content.splitlines()
+        if not lines:
+            return ""
+
+        start = line_start if line_start is not None else 1
+        end = line_end if line_end is not None else start
+        context = max(0, context_lines)
+        start = max(1, start - context)
+        end = min(len(lines), end + context)
+        if start > end:
+            return json.dumps({"error": "line_start must be less than or equal to line_end"})
+        return "\n".join(lines[start - 1:end])
+
+    @server.resource(
+        "probe://status",
+        name="probe_status",
+        title="probe index status",
+        description="Index status, indexed file counts, and configured providers.",
+        mime_type="application/json",
+    )
+    def probe_status_resource() -> str:
+        config = state.config
+        stats = state.db.get_stats()
+        return json.dumps({
+            **stats,
+            "project_root": str(state.project_root),
+            "providers": {
+                "embedding": f"{config.embedding_provider}/{config.embedding_model}",
+                "reranker": f"{config.rerank_provider}/{config.rerank_model}",
+            },
+        }, indent=2)
+
+    @server.resource(
+        "probe://files",
+        name="probe_files",
+        title="probe indexed files",
+        description="List files currently known to the local probe index.",
+        mime_type="application/json",
+    )
+    def probe_files_resource() -> str:
+        return json.dumps({"files": state.db.list_files()}, indent=2)
+
+    @server.resource(
+        "probe://file/{path}",
+        name="probe_file",
+        title="probe project file",
+        description="Read a project file by URL-encoded project-relative path.",
+        mime_type="text/plain",
+    )
+    def probe_file_resource(path: str) -> str:
+        return read_project_file(unquote(path))
+
     @server.tool()
     def probe_search(
         query: str, top_k: int = 10, max_tokens: int = 4096,
@@ -170,8 +260,9 @@ def create_mcp_server() -> FastMCP:
                 pipeline = IndexPipeline(
                     db=state.db, vector_store=vector_store,
                     embedding_provider=embedding_for_refresh,
+                    root_dir=state.project_root,
                 )
-                refreshed_info = pipeline.refresh_changed([Path.cwd()])
+                refreshed_info = pipeline.refresh_changed([state.project_root])
                 gate.mark()
                 total_changed = (
                     refreshed_info["added"]
@@ -223,8 +314,9 @@ def create_mcp_server() -> FastMCP:
         )
         pipeline = IndexPipeline(
             db=state.db, vector_store=vector_store, embedding_provider=embedding,
+            root_dir=state.project_root,
         )
-        index_paths = [Path(p) for p in paths] if paths else [Path.cwd()]
+        index_paths = [Path(p) for p in paths] if paths else [state.project_root]
         stats = pipeline.index(index_paths, full=full)
         state.invalidate()  # reset cached engine so next search picks up new data
         return json.dumps(stats)
@@ -251,34 +343,7 @@ def create_mcp_server() -> FastMCP:
         """Read the full content of an indexed file. Use after probe_search
         to get more context from a specific source. Provide line_start/line_end
         to read a focused line range."""
-        target = Path(file_path)
-        if not target.is_absolute():
-            target = Path.cwd() / file_path
-
-        # Security: restrict reads to the project directory
-        try:
-            target.resolve().relative_to(Path.cwd().resolve())
-        except ValueError:
-            return json.dumps({"error": "Access denied: path is outside project directory"})
-
-        if not target.exists():
-            return json.dumps({"error": f"File not found: {file_path}"})
-        content = target.read_text(encoding="utf-8", errors="replace")
-        if line_start is None and line_end is None:
-            return content
-
-        lines = content.splitlines()
-        if not lines:
-            return ""
-
-        start = line_start if line_start is not None else 1
-        end = line_end if line_end is not None else start
-        context = max(0, context_lines)
-        start = max(1, start - context)
-        end = min(len(lines), end + context)
-        if start > end:
-            return json.dumps({"error": "line_start must be less than or equal to line_end"})
-        return "\n".join(lines[start - 1:end])
+        return read_project_file(file_path, line_start, line_end, context_lines)
 
     return server
 

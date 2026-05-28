@@ -40,7 +40,7 @@ What you get:
 - Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
 - Cross-encoder reranking with ZeroEntropy `zerank-2`
 - Local index storage in `.probe/`
-- MCP tools for Claude Code, Cursor, and other MCP-compatible agents
+- MCP tools and resources for Claude Code, Cursor, and other MCP-compatible agents
 
 ---
 
@@ -58,7 +58,7 @@ inside Claude Code:
 ```
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.3.0 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.0 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
@@ -129,6 +129,18 @@ Your agent gets four tools:
 | `probe_index` | Index or re-index project files |
 | `probe_status` | Show what's indexed |
 | `probe_read` | Read a file, optionally with focused line ranges |
+
+It also gets MCP resources:
+
+| Resource | What it exposes |
+|----------|-----------------|
+| `probe://status` | Index status and provider configuration |
+| `probe://files` | Indexed file list |
+| `probe://file/{path}` | Read a project file by URL-encoded path |
+
+When Claude Code starts probe, probe uses `CLAUDE_PROJECT_DIR` as the project
+root. That keeps search, indexing, and file reads pinned to the repo even when
+the MCP process starts from another directory.
 
 ---
 

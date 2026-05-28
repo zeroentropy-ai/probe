@@ -2,6 +2,12 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.0 — 2026-05-28
+
+### Added
+- MCP resources for index status, indexed file lists, and project file reads.
+- `CLAUDE_PROJECT_DIR` root detection for Claude Code plugin launches, keeping MCP search, indexing, and reads pinned to the project root.
+
 ## 0.3.0 — 2026-05-28
 
 ### Added

@@ -1,7 +1,9 @@
 """Tests for MCP server tool definitions."""
 
+import asyncio
 import json
 from unittest.mock import MagicMock, patch
+from urllib.parse import quote
 
 import numpy as np
 import pytest
@@ -179,3 +181,82 @@ def test_probe_read_supports_line_windows(tmp_path, monkeypatch):
     result = tool.fn(file_path="src/auth.py", line_start=2, line_end=4)
 
     assert result == "line 2\nline 3\nline 4"
+
+
+def test_mcp_uses_claude_project_dir_for_search_and_read(tmp_path, monkeypatch):
+    launch_dir = tmp_path / "launcher"
+    launch_dir.mkdir()
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / ".probe").mkdir()
+    (project_dir / "docs").mkdir()
+    (project_dir / "docs" / "guide.md").write_text("project root guide")
+
+    monkeypatch.chdir(launch_dir)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+    monkeypatch.setenv("ZEROENTROPY_API_KEY", "test")
+    monkeypatch.setenv("PROBE_REFRESH_TTL", "0")
+
+    server = create_mcp_server()
+    search_tool = server._tool_manager._tools["probe_search"]
+    read_tool = server._tool_manager._tools["probe_read"]
+
+    fake_response = MagicMock()
+    fake_response.query = "setup"
+    fake_response.results = []
+    fake_response.total_tokens = 0
+    fake_response.sources_searched = 0
+
+    with (
+        patch("probe.search.engine.ContextEngine.search", return_value=fake_response),
+        patch(
+            "probe.indexer.pipeline.IndexPipeline.refresh_changed",
+            return_value={"added": 0, "changed": 0, "removed": 0, "elapsed_ms": 1},
+        ) as mock_refresh,
+        patch("probe.mcp.server._build_providers", return_value=(_fake_embed(), None)),
+    ):
+        search_tool.fn(query="setup")
+
+    assert mock_refresh.call_args.args[0] == [project_dir]
+    assert read_tool.fn(file_path="docs/guide.md") == "project root guide"
+
+
+def test_probe_read_denies_paths_outside_claude_project_dir(tmp_path, monkeypatch):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / ".probe").mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private")
+
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+    monkeypatch.chdir(tmp_path)
+
+    server = create_mcp_server()
+    tool = server._tool_manager._tools["probe_read"]
+
+    data = json.loads(tool.fn(file_path=str(outside)))
+
+    assert data["error"] == "Access denied: path is outside project directory"
+
+
+def test_mcp_exposes_status_and_file_resources(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".probe").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "guide.md").write_text("# Guide\n\nProject setup details.")
+
+    server = create_mcp_server()
+
+    resources = {str(resource.uri) for resource in server._resource_manager.list_resources()}
+    templates = {
+        template.uri_template for template in server._resource_manager.list_templates()
+    }
+
+    assert "probe://status" in resources
+    assert "probe://files" in resources
+    assert "probe://file/{path}" in templates
+
+    file_uri = f"probe://file/{quote('docs/guide.md', safe='')}"
+    file_resource = asyncio.run(server._resource_manager.get_resource(file_uri))
+
+    assert asyncio.run(file_resource.read()) == "# Guide\n\nProject setup details."
