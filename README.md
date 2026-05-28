@@ -73,8 +73,8 @@ export ZEROENTROPY_API_KEY="ze_xxx"
 # 4. Register probe with Claude Code (one-time, machine-wide)
 probe install
 
-# 5. Verify Claude Code sees probe
-claude mcp get probe
+# 5. Verify Claude Code sees probe without printing stored env values
+claude mcp list
 
 # Now open any project in Claude Code and ask a question —
 # probe will auto-index on first search and refresh on subsequent ones.
