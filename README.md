@@ -52,10 +52,13 @@ Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>. Then run
 inside Claude Code:
 
 ```text
-/plugin marketplace add zeroentropy-ai/probe --sparse .claude-plugin plugins
+/plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .claude-plugin plugins
 /plugin install probe@zeroentropy
 /reload-plugins
 ```
+
+Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
+clone over SSH, which requires a configured GitHub SSH key.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
 starts probe with `uvx --from probe-search==0.4.0 probe mcp`, so Claude Code
