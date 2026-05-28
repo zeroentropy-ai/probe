@@ -11,6 +11,23 @@ probe is a CLI tool and MCP server that indexes your project's documentation, sp
 
 ---
 
+## Contents
+
+- [The Problem](#the-problem)
+- [What You Get](#what-you-get)
+- [Quick Start](#quick-start)
+- [MCP Server Setup](#mcp-server-setup-claude-code-cursor)
+- [Index Freshness](#index-freshness)
+- [Supported Files](#supported-files)
+- [How It Works](#how-it-works)
+- [Example Output](#example-output)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [How Data Is Handled](#how-data-is-handled)
+- [What's NOT in v1](#whats-not-in-v1)
+
+---
+
 ## The Problem
 
 AI coding agents waste time searching. When you ask Claude Code or Cursor "how does our auth flow work?", they `grep` through files, read them one by one, and piece together an answer over multiple tool calls. On a large project with docs, specs, ADRs, and runbooks, this takes 30-60 seconds and often misses the most relevant context entirely.
