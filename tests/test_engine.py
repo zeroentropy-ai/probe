@@ -17,7 +17,7 @@ def populated_db(tmp_probe_dir):
     db.initialize()
     fid = db.add_file("docs/auth.md", "h1", "markdown")
     db.add_chunk(fid, 0, "OAuth PKCE authentication flow with Auth0", "markdown", 0, 42, 7,
-                 header_path="Authentication > OAuth Flow")
+                 header_path="Authentication > OAuth Flow", line_start=4, line_end=4)
     db.add_chunk(fid, 1, "Rate limiting uses sliding window algorithm", "markdown", 43, 87, 7,
                  header_path="API Design > Rate Limiting")
     fid2 = db.add_file("src/auth.py", "h2", "code")
@@ -88,3 +88,9 @@ class TestContextEngine:
     def test_sources_searched_count(self, engine):
         response = engine.search("authentication")
         assert response.sources_searched == 3
+
+    def test_results_include_line_ranges(self, engine):
+        response = engine.search("authentication")
+        auth_result = next(r for r in response.results if r.file == "docs/auth.md")
+        assert auth_result.line_start == 4
+        assert auth_result.line_end == 4

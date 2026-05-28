@@ -46,6 +46,8 @@ class ProbeDB:
                 header_path TEXT,
                 symbol_name TEXT,
                 page_number INTEGER,
+                line_start INTEGER,
+                line_end INTEGER,
                 FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
             );
 
@@ -76,6 +78,8 @@ class ProbeDB:
         for ddl in [
             "ALTER TABLE files ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE files ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE chunks ADD COLUMN line_start INTEGER",
+            "ALTER TABLE chunks ADD COLUMN line_end INTEGER",
         ]:
             try:
                 self.conn.execute(ddl)
@@ -117,14 +121,15 @@ class ProbeDB:
         return [dict(row) for row in rows]
 
     def add_chunk(self, file_id, chunk_index, content, file_type, char_start, char_end,
-                  token_count, header_path=None, symbol_name=None, page_number=None) -> int:
+                  token_count, header_path=None, symbol_name=None, page_number=None,
+                  line_start=None, line_end=None) -> int:
         cursor = self.conn.execute(
             """INSERT INTO chunks
                (file_id, chunk_index, content, file_type, char_start, char_end,
-                token_count, header_path, symbol_name, page_number)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                token_count, header_path, symbol_name, page_number, line_start, line_end)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (file_id, chunk_index, content, file_type, char_start, char_end,
-             token_count, header_path, symbol_name, page_number),
+             token_count, header_path, symbol_name, page_number, line_start, line_end),
         )
         return cursor.lastrowid
 

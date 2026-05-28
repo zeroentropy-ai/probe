@@ -48,12 +48,15 @@ class TestChunkOperations:
         chunk_id = db.add_chunk(file_id=file_id, chunk_index=0,
                                 content="## Auth\nOAuth PKCE flow", file_type="markdown",
                                 char_start=0, char_end=24, token_count=5,
-                                header_path="Authentication > OAuth Flow")
+                                header_path="Authentication > OAuth Flow",
+                                line_start=10, line_end=11)
         chunks = db.get_all_chunks()
         assert len(chunks) == 1
         assert chunks[0]["content"] == "## Auth\nOAuth PKCE flow"
         assert chunks[0]["header_path"] == "Authentication > OAuth Flow"
         assert chunks[0]["id"] == chunk_id
+        assert chunks[0]["line_start"] == 10
+        assert chunks[0]["line_end"] == 11
 
     def test_get_chunk_by_id(self, db: ProbeDB):
         file_id = db.add_file("src/auth.py", "def456", "code")
@@ -115,6 +118,14 @@ class TestMtimeAndSize:
         db = ProbeDB(tmp_probe_dir / "probe.db")
         db.initialize()
         db.initialize()  # second call should be a no-op
+        db.close()
+
+    def test_chunks_table_has_line_range_columns(self, tmp_probe_dir: Path):
+        db = ProbeDB(tmp_probe_dir / "probe.db")
+        db.initialize()
+        cols = {row[1] for row in db.conn.execute("PRAGMA table_info(chunks)").fetchall()}
+        assert "line_start" in cols
+        assert "line_end" in cols
         db.close()
 
     def test_add_file_accepts_mtime_and_size(self, tmp_probe_dir: Path):

@@ -8,6 +8,7 @@ import pytest
 
 from probe.config import ProbeConfig
 from probe.mcp.server import _build_providers, create_mcp_server
+from probe.models import SearchResult
 
 
 class TestMCPServer:
@@ -40,9 +41,19 @@ def test_probe_search_returns_refreshed_field(tmp_path, monkeypatch):
 
     fake_response = MagicMock()
     fake_response.query = "x"
-    fake_response.results = []
-    fake_response.total_tokens = 0
-    fake_response.sources_searched = 0
+    fake_response.results = [
+        SearchResult(
+            score=0.9,
+            file="src/auth.py",
+            file_type="code",
+            content="def login():\n    return True",
+            char_range=(0, 28),
+            line_start=12,
+            line_end=13,
+        )
+    ]
+    fake_response.total_tokens = 5
+    fake_response.sources_searched = 1
 
     with (
         patch("probe.search.engine.ContextEngine.search", return_value=fake_response),
@@ -60,6 +71,8 @@ def test_probe_search_returns_refreshed_field(tmp_path, monkeypatch):
     data = json.loads(result_json)
     assert "refreshed" in data
     assert data["refreshed"] == {"added": 0, "changed": 2, "removed": 0, "elapsed_ms": 50}
+    assert data["results"][0]["line_start"] == 12
+    assert data["results"][0]["line_end"] == 13
 
 
 def test_probe_search_refresh_error_does_not_block_search(tmp_path, monkeypatch):
@@ -150,3 +163,19 @@ def test_mcp_embedding_provider_requires_api_key(monkeypatch):
 
     with pytest.raises(ValueError, match="ZEROENTROPY_API_KEY not set"):
         _build_providers(ProbeConfig())
+
+
+def test_probe_read_supports_line_windows(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".probe").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "auth.py").write_text(
+        "line 1\nline 2\nline 3\nline 4\nline 5\n"
+    )
+
+    server = create_mcp_server()
+    tool = server._tool_manager._tools["probe_read"]
+
+    result = tool.fn(file_path="src/auth.py", line_start=2, line_end=4)
+
+    assert result == "line 2\nline 3\nline 4"

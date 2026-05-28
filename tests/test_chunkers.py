@@ -41,6 +41,23 @@ class TestCodeChunker:
         for chunk in chunks:
             assert len(chunk.content) <= 2000
 
+    def test_chunks_include_line_ranges(self):
+        content = (
+            "import os\n"
+            "\n"
+            "class OAuthHandler:\n"
+            "    def login(self):\n"
+            "        return 'ok'\n"
+            "\n"
+            "def helper():\n"
+            "    return True\n"
+        )
+        chunks = chunk_code(content, "src/auth.py")
+
+        oauth_chunk = next(c for c in chunks if c.symbol_name == "OAuthHandler")
+        assert oauth_chunk.line_start == 3
+        assert oauth_chunk.line_end == 5
+
 
 class TestTextChunker:
     def test_splits_on_paragraphs(self, sample_text: str):

@@ -20,6 +20,8 @@ class Chunk:
     header_path: str | None = None  # markdown only
     symbol_name: str | None = None  # code only
     page_number: int | None = None  # pdf only
+    line_start: int | None = None
+    line_end: int | None = None
 
 
 @dataclass
@@ -34,6 +36,8 @@ class SearchResult:
     header_path: str | None = None
     symbol_name: str | None = None
     page_number: int | None = None
+    line_start: int | None = None
+    line_end: int | None = None
 
 
 @dataclass

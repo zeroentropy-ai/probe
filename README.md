@@ -46,7 +46,7 @@ these commands inside Claude Code:
 ```
 
 Claude Code will ask for your ZeroEntropy API key during plugin install. The
-plugin starts probe with `uvx --from probe-search==0.2.4 probe mcp`, so you do
+plugin starts probe with `uvx --from probe-search==0.3.0 probe mcp`, so you do
 not need to install probe separately for Claude Code.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
@@ -103,6 +103,21 @@ probe search "how does authentication work"
 The index auto-refreshes before each search; set `PROBE_REFRESH_TTL=0` to
 force refresh every time, or `-1` to disable refresh.
 
+### Verify your setup
+
+After installing the CLI, run:
+
+```bash
+probe doctor
+probe smoke
+```
+
+`probe doctor` checks your API key, Claude Code wiring, MCP registration, and
+local index health without printing secrets or uploading project content.
+`probe smoke` creates a tiny sample project, indexes it, searches it, and
+confirms probe can retrieve the expected file. Use `probe smoke --current` to
+validate the current repo.
+
 ---
 
 ## MCP Server Setup (Claude Code, Cursor)
@@ -139,7 +154,7 @@ Your agent gains four tools:
 | `probe_search` | Semantic search across docs and code with automatic refresh and reranking |
 | `probe_index` | Index or re-index project files, skipping unchanged files by default |
 | `probe_status` | Show what's indexed |
-| `probe_read` | Read a specific file by path |
+| `probe_read` | Read a file, optionally with focused line ranges |
 
 ---
 
@@ -171,8 +186,9 @@ File discovery respects root `.gitignore` and `.probeignore` files. It also
 always skips `.git/`, `.probe/`, `__pycache__/`, `.venv/`, and `*.pyc`.
 
 Chunks keep useful location metadata: Markdown header paths, code symbol names,
-and PDF page numbers. Search results include that metadata so agents can cite
-the right file section instead of dumping whole files into context.
+PDF page numbers, and line ranges. Search results include that metadata so
+agents can cite the right file section instead of dumping whole files into
+context.
 
 ---
 
@@ -201,7 +217,7 @@ $ probe search "how does authentication work"
    The flow works as follows: 1) Client generates a code verifier
    and challenge, 2) User is redirected to Auth0's /authorize...
 
- [0.87] src/auth/oauth.py > class OAuthHandler
+ [0.87] src/auth/oauth.py:42-71 > class OAuthHandler
    class OAuthHandler:
        """Handles OAuth2 PKCE flow for web and mobile clients."""
        def __init__(self, client_id: str, redirect_uri: str):
@@ -218,6 +234,15 @@ $ probe search "how does authentication work"
 
 One query returns the design spec, the implementation code, and the architectural decision record -- ranked by relevance, in under a second.
 
+For scripts and agents, use JSON output:
+
+```bash
+probe search "how does authentication work" --json
+probe status --json
+probe doctor --json
+probe smoke --json
+```
+
 ---
 
 ## CLI Reference
@@ -232,10 +257,16 @@ One query returns the design spec, the implementation code, and the architectura
 | `probe search --type code` | Filter by file type (markdown, code, pdf, text) |
 | `probe search --no-rerank` | Skip reranking (faster, lower quality) |
 | `probe search --max-tokens N` | Token budget for results (default: 4096) |
+| `probe search --json` | Emit machine-readable results with line ranges |
 | `probe status` | Show index stats and model config |
+| `probe status --json` | Emit machine-readable index status |
 | `probe list` | List all indexed files |
 | `probe config` | Show current model configuration |
 | `probe init` | Create local config from environment |
+| `probe doctor` | Diagnose API key, Claude Code, MCP, and index setup |
+| `probe doctor --json` | Emit machine-readable diagnostics |
+| `probe smoke` | Run an end-to-end indexing and search validation |
+| `probe smoke --current` | Smoke-test the current project instead of a temp sample |
 | `probe mcp` | Start MCP server (stdio transport) |
 | `probe uninstall [--purge]` | Unregister probe; `--purge` also deletes `.probe/` in cwd |
 

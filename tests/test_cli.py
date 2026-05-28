@@ -1,9 +1,14 @@
 """Tests for the CLI interface."""
 
+import json
+
 import pytest
 from click.testing import CliRunner
 
-from probe.cli import main
+import probe
+from probe.cli import _print_json, main
+from probe.models import ContextResponse, SearchResult
+from probe.store.database import ProbeDB
 
 
 @pytest.fixture
@@ -19,7 +24,7 @@ class TestCLI:
     def test_version(self, runner):
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.2.4" in result.output
+        assert probe.__version__ in result.output
 
     def test_index_command_exists(self, runner):
         result = runner.invoke(main, ["index", "--help"])
@@ -35,6 +40,14 @@ class TestCLI:
 
     def test_mcp_command_exists(self, runner):
         result = runner.invoke(main, ["mcp", "--help"])
+        assert result.exit_code == 0
+
+    def test_doctor_command_exists(self, runner):
+        result = runner.invoke(main, ["doctor", "--help"])
+        assert result.exit_code == 0
+
+    def test_smoke_command_exists(self, runner):
+        result = runner.invoke(main, ["smoke", "--help"])
         assert result.exit_code == 0
 
     def test_search_calls_refresh_when_gate_allows(self, runner, monkeypatch, tmp_path):
@@ -60,6 +73,86 @@ class TestCLI:
 
             result = runner.invoke(main, ["search", "x"])
             assert mock_refresh.called, f"refresh_changed was not called. Output: {result.output}"
+
+    def test_status_json_outputs_parseable_report(self, runner, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        probe_dir = tmp_path / ".probe"
+        probe_dir.mkdir()
+        db = ProbeDB(probe_dir / "probe.db")
+        db.initialize()
+        file_id = db.add_file("README.md", "abc", "markdown")
+        db.add_chunk(
+            file_id=file_id,
+            chunk_index=0,
+            content="# Readme",
+            file_type="markdown",
+            char_start=0,
+            char_end=8,
+            token_count=3,
+            line_start=1,
+            line_end=1,
+        )
+        db.commit()
+        db.close()
+
+        result = runner.invoke(main, ["status", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["total_files"] == 1
+        assert data["total_chunks"] == 1
+        assert data["providers"]["embedding"] == "zeroentropy/zembed-1"
+
+    def test_search_json_outputs_line_ranges(self, runner, monkeypatch, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PROBE_REFRESH_TTL", "-1")
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "test")
+        (tmp_path / ".probe").mkdir()
+
+        response = ContextResponse(
+            query="auth",
+            results=[
+                SearchResult(
+                    score=0.95,
+                    file="src/auth.py",
+                    file_type="code",
+                    content="def login():\n    return True",
+                    char_range=(0, 28),
+                    line_start=7,
+                    line_end=8,
+                )
+            ],
+            total_tokens=5,
+            sources_searched=1,
+        )
+
+        with patch("probe.cli._build_providers", return_value=(MagicMock(), None)), \
+             patch("probe.search.engine.ContextEngine.search", return_value=response):
+            result = runner.invoke(main, ["search", "auth", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["results"][0]["file"] == "src/auth.py"
+        assert data["results"][0]["line_start"] == 7
+        assert data["results"][0]["line_end"] == 8
+
+    def test_print_json_does_not_wrap_long_values(self, capsys):
+        _print_json({"fix": "x" * 240})
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["fix"] == "x" * 240
+
+    def test_smoke_json_is_parseable_when_api_key_missing(self, runner, monkeypatch):
+        monkeypatch.delenv("ZEROENTROPY_API_KEY", raising=False)
+
+        result = runner.invoke(main, ["smoke", "--json"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["status"] == "FAIL"
+        assert "ZEROENTROPY_API_KEY" in data["error"]
 
     def test_install_exits_when_claude_not_on_path(self, runner, monkeypatch):
         def mock_which(name):

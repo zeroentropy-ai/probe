@@ -90,6 +90,37 @@ def _build_providers(config: ProbeConfig):
     return embedding, reranker
 
 
+def _search_result_to_dict(result):
+    return {
+        "score": result.score,
+        "file": result.file,
+        "type": result.file_type,
+        "header_path": result.header_path,
+        "symbol": result.symbol_name,
+        "page": result.page_number,
+        "content": result.content,
+        "char_range": list(result.char_range),
+        "line_start": result.line_start,
+        "line_end": result.line_end,
+    }
+
+
+def _search_response_to_dict(response, refreshed=None):
+    data = {
+        "query": response.query,
+        "results": [_search_result_to_dict(result) for result in response.results],
+        "total_tokens": response.total_tokens,
+        "sources_searched": response.sources_searched,
+    }
+    if refreshed is not None:
+        data["refreshed"] = refreshed
+    return data
+
+
+def _print_json(data) -> None:
+    click.echo(json.dumps(data, indent=2))
+
+
 @click.group()
 @click.version_option(version=probe.__version__, prog_name="probe")
 def main():
@@ -137,7 +168,8 @@ def index(paths, full):
 @click.option("--max-tokens", default=4096, help="Token budget for results")
 @click.option("--type", "file_types", multiple=True, help="Filter by file type")
 @click.option("--no-rerank", is_flag=True, help="Skip reranking")
-def search(query, top_k, max_tokens, file_types, no_rerank):
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+def search(query, top_k, max_tokens, file_types, no_rerank, json_output):
     """Search project knowledge with natural language."""
     from probe.search.engine import ContextEngine
     from probe.search.vector import VectorStore
@@ -149,6 +181,7 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
     db.initialize()
     vector_store = VectorStore(probe_dir / "vectors.npy", dimensions=config.embedding_dimensions)
     vector_store.load()
+    refreshed_info = None
 
     # Refresh-before-search: update index if files changed since last index.
     gate = RefreshGate.from_env()
@@ -165,7 +198,8 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
             total_changed = (
                 refresh_stats["added"] + refresh_stats["changed"] + refresh_stats["removed"]
             )
-            if total_changed > 0:
+            refreshed_info = refresh_stats
+            if total_changed > 0 and not json_output:
                 console.print(
                     f"[dim]Refreshed: +{refresh_stats['added']} "
                     f"±{refresh_stats['changed']} -{refresh_stats['removed']} "
@@ -173,9 +207,15 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
                 )
         except Exception as e:
             from rich.markup import escape
-            console.print(
-                f"[yellow]Warning: refresh failed ({escape(str(e))}); using stale index.[/yellow]"
-            )
+            refreshed_info = {
+                "added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0,
+                "error": str(e),
+            }
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: refresh failed ({escape(str(e))}); "
+                    "using stale index.[/yellow]"
+                )
 
     # Note: providers are built twice on search — once for the refresh pass above
     # and once here for the search. Provider constructors are cheap; keeping the
@@ -192,6 +232,13 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
                              rerank=not no_rerank)
     elapsed = time.time() - t0
 
+    if json_output:
+        data = _search_response_to_dict(response, refreshed=refreshed_info)
+        data["elapsed_seconds"] = round(elapsed, 3)
+        _print_json(data)
+        db.close()
+        return
+
     if not response.results:
         console.print("[yellow]No results found.[/yellow]")
         db.close()
@@ -204,7 +251,13 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
         score_color = "green" if result.score > 0.7 else "yellow" if result.score > 0.4 else "dim"
         score_str = f"[{score_color}][{result.score:.2f}][/{score_color}]"
 
-        loc = f"[cyan]{result.file}[/cyan]"
+        line_suffix = ""
+        if result.line_start is not None:
+            line_suffix = f":{result.line_start}"
+            if result.line_end and result.line_end != result.line_start:
+                line_suffix += f"-{result.line_end}"
+
+        loc = f"[cyan]{result.file}{line_suffix}[/cyan]"
         if result.header_path:
             loc += f" > [dim]{result.header_path}[/dim]"
         elif result.symbol_name:
@@ -227,7 +280,8 @@ def search(query, top_k, max_tokens, file_types, no_rerank):
 
 
 @main.command()
-def status():
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+def status(json_output):
     """Show index status and configuration."""
     from probe.store.database import ProbeDB
 
@@ -236,6 +290,17 @@ def status():
     db = ProbeDB(probe_dir / "probe.db")
     db.initialize()
     stats = db.get_stats()
+
+    if json_output:
+        _print_json({
+            **stats,
+            "providers": {
+                "embedding": f"{config.embedding_provider}/{config.embedding_model}",
+                "reranker": f"{config.rerank_provider}/{config.rerank_model}",
+            },
+        })
+        db.close()
+        return
 
     table = Table(title="probe status")
     table.add_column("Property", style="cyan")
@@ -249,6 +314,66 @@ def status():
     table.add_row("Reranker", f"{config.rerank_provider}/{config.rerank_model}")
     console.print(table)
     db.close()
+
+
+@main.command()
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+@click.option("--strict", is_flag=True, help="Treat optional warnings as failures")
+@click.option("--no-network", is_flag=True, help="Skip network reachability checks")
+def doctor(json_output, strict, no_network):
+    """Check local probe, API key, index, and Claude Code setup."""
+    from probe.diagnostics import FAIL, PASS, WARN, run_doctor
+
+    report = run_doctor(strict=strict, no_network=no_network)
+    if json_output:
+        _print_json(report.to_dict())
+    else:
+        table = Table(title="probe doctor")
+        table.add_column("Status", style="bold")
+        table.add_column("Check", style="cyan")
+        table.add_column("Detail")
+        table.add_column("Fix")
+        styles = {PASS: "green", WARN: "yellow", FAIL: "red"}
+        for check in report.checks:
+            table.add_row(
+                f"[{styles.get(check.status, 'white')}]{check.status}[/]",
+                check.name,
+                check.detail,
+                check.fix,
+            )
+        console.print(table)
+
+    if report.status == FAIL:
+        raise SystemExit(1)
+
+
+@main.command()
+@click.option("--current", is_flag=True, help="Smoke-test the current project")
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+@click.option("--keep", is_flag=True, help="Keep the temporary sample project")
+@click.option("--claude", is_flag=True, help="Also validate local Claude wiring")
+def smoke(current, json_output, keep, claude):
+    """Run an end-to-end indexing and search validation."""
+    from probe.smoke import run_smoke
+
+    report = run_smoke(current=current, keep=keep, claude=claude)
+    if json_output:
+        _print_json(report.to_dict())
+    else:
+        if report.status == "PASS":
+            console.print("[green]PASS[/green] probe smoke succeeded")
+            console.print(f"  Project: {report.project_path}")
+            console.print(f"  Indexed: {report.indexed_files} files, {report.chunks} chunks")
+            console.print(f"  Search results: {report.search_result_count}")
+            if report.temp_project_kept:
+                console.print("  Temp project kept for inspection.")
+        else:
+            console.print("[red]FAIL[/red] probe smoke failed")
+            if report.error:
+                console.print(f"  {report.error}")
+
+    if report.status != "PASS":
+        raise SystemExit(1)
 
 
 @main.command(name="list")

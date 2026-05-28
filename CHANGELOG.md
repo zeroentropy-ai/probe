@@ -2,6 +2,15 @@
 
 All notable changes to probe are documented here.
 
+## 0.3.0 — 2026-05-28
+
+### Added
+- `probe doctor` for local setup diagnostics across API keys, Claude Code, MCP, and index health.
+- `probe smoke` for an end-to-end indexing and search validation.
+- JSON output for `probe search`, `probe status`, `probe doctor`, and `probe smoke`.
+- Line ranges in indexed chunks, CLI search output, and MCP `probe_search` results.
+- Focused line-window reads in MCP `probe_read`.
+
 ## 0.2.4 — 2026-05-27
 
 ### Fixed

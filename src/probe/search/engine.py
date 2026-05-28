@@ -91,6 +91,8 @@ class ContextEngine:
                 header_path=chunk.get("header_path"),
                 symbol_name=chunk.get("symbol_name"),
                 page_number=chunk.get("page_number"),
+                line_start=chunk.get("line_start"),
+                line_end=chunk.get("line_end"),
             ))
             total_tokens += chunk_tokens
 

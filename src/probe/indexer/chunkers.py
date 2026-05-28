@@ -16,14 +16,28 @@ def _count_tokens(text: str) -> int:
     return len(_enc.encode(text))
 
 
+def _line_range(source_text: str, char_start: int, char_end: int) -> tuple[int, int]:
+    bounded_start = max(0, min(char_start, len(source_text)))
+    bounded_end = max(bounded_start, min(char_end, len(source_text)))
+    line_start = source_text.count("\n", 0, bounded_start) + 1
+    end_index = max(bounded_start, bounded_end - 1)
+    line_end = source_text.count("\n", 0, end_index) + 1
+    return line_start, line_end
+
+
 def _make_chunk(content, file_path, file_type, chunk_index, char_start,
-                header_path=None, symbol_name=None, page_number=None) -> Chunk:
+                source_text=None, header_path=None, symbol_name=None,
+                page_number=None) -> Chunk:
+    line_start = line_end = None
+    if source_text is not None:
+        line_start, line_end = _line_range(source_text, char_start, char_start + len(content))
     return Chunk(
         id=str(uuid.uuid4()), file_path=file_path, file_type=file_type,
         chunk_index=chunk_index, content=content,
         char_start=char_start, char_end=char_start + len(content),
         token_count=_count_tokens(content),
         header_path=header_path, symbol_name=symbol_name, page_number=page_number,
+        line_start=line_start, line_end=line_end,
     )
 
 
@@ -34,7 +48,7 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
     if not matches:
         text = content.strip()
         if text:
-            return [_make_chunk(text, file_path, "markdown", 0, 0)]
+            return [_make_chunk(text, file_path, "markdown", 0, 0, source_text=content)]
         return []
 
     chunks: list[Chunk] = []
@@ -42,7 +56,8 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
 
     pre = content[: matches[0].start()].strip()
     if pre:
-        chunks.append(_make_chunk(pre, file_path, "markdown", len(chunks), 0))
+        chunks.append(_make_chunk(pre, file_path, "markdown", len(chunks), 0,
+                                  source_text=content))
 
     for i, match in enumerate(matches):
         level = len(match.group(1))
@@ -67,7 +82,7 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
                 if current and len(current) + len(para) > 1800:
                     chunks.append(_make_chunk(
                         current.strip(), file_path, "markdown",
-                        len(chunks), start, header_path,
+                        len(chunks), start, source_text=content, header_path=header_path,
                     ))
                     current = para
                 else:
@@ -75,12 +90,12 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
             if current.strip():
                 chunks.append(_make_chunk(
                     current.strip(), file_path, "markdown",
-                    len(chunks), start, header_path,
+                    len(chunks), start, source_text=content, header_path=header_path,
                 ))
         else:
             chunks.append(_make_chunk(
                 section, file_path, "markdown",
-                len(chunks), start, header_path,
+                len(chunks), start, source_text=content, header_path=header_path,
             ))
 
     return chunks
@@ -96,13 +111,14 @@ def chunk_code(content: str, file_path: str) -> list[Chunk]:
     matches = list(pattern.finditer(content))
 
     if not matches:
-        return _sliding_window(content, file_path, "code")
+        return _sliding_window(content, file_path, "code", source_text=content)
 
     chunks: list[Chunk] = []
 
     pre = content[: matches[0].start()].strip()
     if pre and len(pre) > 20:
-        chunks.append(_make_chunk(pre, file_path, "code", len(chunks), 0))
+        chunks.append(_make_chunk(pre, file_path, "code", len(chunks), 0,
+                                  source_text=content))
 
     for i, match in enumerate(matches):
         start = match.start()
@@ -119,14 +135,17 @@ def chunk_code(content: str, file_path: str) -> list[Chunk]:
         symbol_name = symbol_match.group(1) if symbol_match else None
 
         if len(section) > 2000:
-            sub_chunks = _sliding_window(section, file_path, "code", symbol_name=symbol_name)
+            sub_chunks = _sliding_window(
+                section, file_path, "code", symbol_name=symbol_name,
+                source_text=content, base_offset=start,
+            )
             for sc in sub_chunks:
                 sc.chunk_index = len(chunks)
                 chunks.append(sc)
         else:
             chunks.append(_make_chunk(
                 section, file_path, "code", len(chunks),
-                start, symbol_name=symbol_name,
+                start, source_text=content, symbol_name=symbol_name,
             ))
 
     return chunks
@@ -141,7 +160,7 @@ def chunk_pdf(content: str, file_path: str) -> list[Chunk]:
         if text:
             chunks.append(_make_chunk(
                 text, file_path, "pdf", len(chunks),
-                char_offset, page_number=i + 1,
+                char_offset, source_text=content, page_number=i + 1,
             ))
         char_offset += len(page) + len("--- PAGE BREAK ---")
     return chunks
@@ -158,18 +177,21 @@ def chunk_text(content: str, file_path: str) -> list[Chunk]:
         if not para:
             continue
         if current and len(current) + len(para) > 1500:
-            chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset))
+            chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset,
+                                      source_text=content))
             char_offset += len(current)
             current = para
         else:
             current = f"{current}\n\n{para}" if current else para
 
     if current.strip():
-        chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset))
+        chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset,
+                                  source_text=content))
     return chunks
 
 
-def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200, symbol_name=None):
+def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200,
+                    symbol_name=None, source_text=None, base_offset=0):
     chunks: list[Chunk] = []
     start = 0
     while start < len(content):
@@ -178,7 +200,8 @@ def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200
         if text.strip():
             chunks.append(_make_chunk(
                 text, file_path, file_type, len(chunks),
-                start, symbol_name=symbol_name,
+                base_offset + start, source_text=source_text or content,
+                symbol_name=symbol_name,
             ))
         if end >= len(content):
             break

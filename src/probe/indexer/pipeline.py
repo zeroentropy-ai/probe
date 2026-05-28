@@ -56,6 +56,7 @@ class IndexPipeline:
                 char_start=chunk.char_start, char_end=chunk.char_end,
                 token_count=chunk.token_count, header_path=chunk.header_path,
                 symbol_name=chunk.symbol_name, page_number=chunk.page_number,
+                line_start=chunk.line_start, line_end=chunk.line_end,
             )
             new_chunk_texts.append(chunk.content)
             new_chunk_ids.append(chunk_id)

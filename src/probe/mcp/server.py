@@ -201,7 +201,8 @@ def create_mcp_server() -> FastMCP:
                 {"score": r.score, "file": r.file, "type": r.file_type,
                  "header_path": r.header_path, "symbol": r.symbol_name,
                  "page": r.page_number, "content": r.content,
-                 "char_range": list(r.char_range)}
+                 "char_range": list(r.char_range), "line_start": r.line_start,
+                 "line_end": r.line_end}
                 for r in response.results
             ],
             "total_tokens": response.total_tokens,
@@ -241,9 +242,15 @@ def create_mcp_server() -> FastMCP:
         })
 
     @server.tool()
-    def probe_read(file_path: str) -> str:
+    def probe_read(
+        file_path: str,
+        line_start: int | None = None,
+        line_end: int | None = None,
+        context_lines: int = 0,
+    ) -> str:
         """Read the full content of an indexed file. Use after probe_search
-        to get more context from a specific source."""
+        to get more context from a specific source. Provide line_start/line_end
+        to read a focused line range."""
         target = Path(file_path)
         if not target.is_absolute():
             target = Path.cwd() / file_path
@@ -256,7 +263,22 @@ def create_mcp_server() -> FastMCP:
 
         if not target.exists():
             return json.dumps({"error": f"File not found: {file_path}"})
-        return target.read_text(encoding="utf-8", errors="replace")
+        content = target.read_text(encoding="utf-8", errors="replace")
+        if line_start is None and line_end is None:
+            return content
+
+        lines = content.splitlines()
+        if not lines:
+            return ""
+
+        start = line_start if line_start is not None else 1
+        end = line_end if line_end is not None else start
+        context = max(0, context_lines)
+        start = max(1, start - context)
+        end = min(len(lines), end + context)
+        if start > end:
+            return json.dumps({"error": "line_start must be less than or equal to line_end"})
+        return "\n".join(lines[start - 1:end])
 
     return server
 
