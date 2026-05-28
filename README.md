@@ -61,7 +61,7 @@ Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
 clone over SSH, which requires a configured GitHub SSH key.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.0 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.1 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`

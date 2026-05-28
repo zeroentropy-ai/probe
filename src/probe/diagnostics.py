@@ -205,7 +205,8 @@ def _check_claude_plugin(claude_path: str | None, run_command: CommandRunner) ->
         "Claude plugin probe@zeroentropy",
         WARN,
         "not found in available plugin list",
-        "Run `/plugin marketplace add zeroentropy-ai/probe --sparse .claude-plugin plugins`.",
+        "Run `/plugin marketplace add https://github.com/zeroentropy-ai/probe.git "
+        "--sparse .claude-plugin plugins`.",
         optional=True,
     )
 

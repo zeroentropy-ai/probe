@@ -2,6 +2,11 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.1 — 2026-05-28
+
+### Fixed
+- `probe doctor` now recommends the HTTPS Claude Code marketplace URL, avoiding GitHub SSH host-key and public-key failures for public installs.
+
 ## 0.4.0 — 2026-05-28
 
 ### Added
