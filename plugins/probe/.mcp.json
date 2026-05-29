@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "probe-search==0.4.1",
+        "probe-search==0.4.2",
         "probe",
         "mcp"
       ],

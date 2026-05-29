@@ -91,8 +91,6 @@ def test_doctor_recommends_https_plugin_marketplace_url(tmp_path, monkeypatch):
     plugin_check = next(
         c for c in report.checks if c.name == "Claude plugin probe@zeroentropy"
     )
-    assert (
-        "/plugin marketplace add https://github.com/zeroentropy-ai/probe.git "
-        "--sparse .claude-plugin plugins"
-    ) in plugin_check.fix
+    assert "/plugin marketplace add https://github.com/zeroentropy-ai/probe.git" in plugin_check.fix
+    assert "--sparse" not in plugin_check.fix
     assert "/plugin marketplace add zeroentropy-ai/probe " not in plugin_check.fix

@@ -52,20 +52,28 @@ Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>. Then run
 inside Claude Code:
 
 ```text
-/plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .claude-plugin plugins
+/plugin marketplace add https://github.com/zeroentropy-ai/probe.git
 /plugin install probe@zeroentropy
 /reload-plugins
 ```
 
 Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
-clone over SSH, which requires a configured GitHub SSH key.
+clone over SSH, which requires a configured GitHub SSH key. The Claude Code
+slash command treats `--sparse` as part of the URL, so do not pass sparse
+checkout options there.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.1 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.2 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
-slash command, export `ZEROENTROPY_API_KEY` before starting Claude Code.
+slash command, export `ZEROENTROPY_API_KEY` before starting Claude Code. From a
+shell, sparse checkout options are supported:
+
+```bash
+claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .claude-plugin plugins
+claude plugin install probe@zeroentropy
+```
 
 ### Manual CLI/MCP setup
 

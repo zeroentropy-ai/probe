@@ -81,11 +81,17 @@ def test_skill_teaches_agents_to_use_probe_before_file_sweeps():
 def test_readme_documents_plugin_install_path():
     readme = (ROOT / "README.md").read_text()
 
+    assert "/plugin marketplace add https://github.com/zeroentropy-ai/probe.git" in readme
     assert (
         "/plugin marketplace add https://github.com/zeroentropy-ai/probe.git "
+        "--sparse"
+    ) not in readme
+    assert (
+        "claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git "
         "--sparse .claude-plugin plugins"
     ) in readme
     assert "zeroentropy-ai/probe` shorthand makes Claude Code" in readme
+    assert "slash command treats `--sparse` as part of the URL" in readme
     assert "/plugin install probe@zeroentropy" in readme
     assert f"uvx --from probe-search=={PROJECT_VERSION} probe mcp" in readme
     assert "If you use the `claude plugin install` shell command" in readme

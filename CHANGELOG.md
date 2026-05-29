@@ -2,6 +2,11 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.2 — 2026-05-28
+
+### Fixed
+- Claude Code slash-command install guidance now omits sparse checkout flags, which Claude Code treats as part of the repository URL. Shell CLI examples still show sparse checkout as an optional terminal-only optimization.
+
 ## 0.4.1 — 2026-05-28
 
 ### Fixed
