@@ -1,0 +1,7 @@
+interface:
+  display_name: "Use probe"
+  short_description: "Search indexed project docs and code with probe"
+  brand_color: "#111827"
+  default_prompt: "Use $use-probe to search this project with probe."
+policy:
+  allow_implicit_invocation: false

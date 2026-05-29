@@ -114,6 +114,14 @@ def test_codex_mcp_config_runs_probe_from_pypi_with_environment_key():
     }
 
 
+def test_codex_skill_is_opt_in_for_implicit_invocation():
+    agent_path = CODEX_PLUGIN_ROOT / "skills" / "use-probe" / "agents" / "openai.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+
+    assert agent["policy"]["allow_implicit_invocation"] is False
+    assert "$use-probe" in agent["interface"]["default_prompt"]
+
+
 def test_skill_teaches_agents_to_use_probe_before_file_sweeps():
     skill_path = PLUGIN_ROOT / "skills" / "use-probe" / "SKILL.md"
     raw = skill_path.read_text()

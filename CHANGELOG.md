@@ -2,6 +2,12 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.4 — 2026-05-29
+
+### Fixed
+- Codex skill metadata now opts out of implicit invocation so automated Codex
+  reviews do not block on probe unless the user explicitly asks for it.
+
 ## 0.4.3 — 2026-05-29
 
 ### Added
