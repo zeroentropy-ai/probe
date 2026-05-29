@@ -321,7 +321,7 @@ def status(json_output):
 @click.option("--strict", is_flag=True, help="Treat optional warnings as failures")
 @click.option("--no-network", is_flag=True, help="Skip network reachability checks")
 def doctor(json_output, strict, no_network):
-    """Check local probe, API key, index, and Claude Code setup."""
+    """Check local probe, API key, index, Claude Code, and Codex setup."""
     from probe.diagnostics import FAIL, PASS, WARN, run_doctor
 
     report = run_doctor(strict=strict, no_network=no_network)
@@ -352,11 +352,12 @@ def doctor(json_output, strict, no_network):
 @click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
 @click.option("--keep", is_flag=True, help="Keep the temporary sample project")
 @click.option("--claude", is_flag=True, help="Also validate local Claude wiring")
-def smoke(current, json_output, keep, claude):
+@click.option("--codex", is_flag=True, help="Also validate local Codex wiring")
+def smoke(current, json_output, keep, claude, codex):
     """Run an end-to-end indexing and search validation."""
     from probe.smoke import run_smoke
 
-    report = run_smoke(current=current, keep=keep, claude=claude)
+    report = run_smoke(current=current, keep=keep, claude=claude, codex=codex)
     if json_output:
         _print_json(report.to_dict())
     else:
@@ -501,18 +502,47 @@ def _enable_probe_in_all_projects() -> int:
     return modified
 
 
-@main.command()
-@click.option("--api-key", default=None, help="ZeroEntropy API key (skip prompt).")
-@click.option("--no-embed-key", is_flag=True,
-              help="Register without embedding API key (rely on shell env).")
-@click.option("--force", is_flag=True, help="Skip already-installed confirmation.")
-def install(api_key, no_embed_key, force):
-    """Register probe as a user-scope MCP server in Claude Code."""
+def _resolve_zeroentropy_key(api_key: str | None, no_embed_key: bool) -> str | None:
+    if no_embed_key:
+        return None
+    if api_key:
+        return api_key
+
+    env_key = os.environ.get("ZEROENTROPY_API_KEY")
+    if env_key and click.confirm("Use $ZEROENTROPY_API_KEY from environment?", default=True):
+        return env_key
+
+    for _ in range(3):
+        entered = click.prompt(
+            "Enter your ZeroEntropy API key",
+            hide_input=True, default="", show_default=False,
+        )
+        if entered.strip():
+            return entered.strip()
+
+    console.print("[red]API key required.[/red]")
+    sys.exit(1)
+
+
+def _resolve_probe_command() -> tuple[str, list[str]]:
+    probe_bin = shutil.which("probe")
+    if probe_bin:
+        return probe_bin, ["mcp"]
+
+    console.print(
+        f"[yellow]Note: probe binary not on PATH; using {sys.executable} -m probe.cli. "
+        "If you move this Python env, rerun `probe install`.[/yellow]"
+    )
+    return sys.executable, ["-m", "probe.cli", "mcp"]
+
+
+def _install_claude(api_key: str | None, no_embed_key: bool, force: bool) -> bool:
     claude_bin = shutil.which("claude")
     if not claude_bin:
         console.print(
             "[red]Claude Code CLI not found.[/red] "
-            "Install it from the official Claude Code documentation, then rerun `probe install`."
+            "Install it from the official Claude Code documentation, then rerun "
+            "`probe install --client claude`."
         )
         sys.exit(1)
 
@@ -524,50 +554,18 @@ def install(api_key, no_embed_key, force):
     )
     if get_result.returncode == 0:
         if not force:
-            if not click.confirm("probe is already registered. Reinstall?", default=False):
+            if not click.confirm(
+                "probe is already registered in Claude Code. Reinstall?", default=False,
+            ):
                 console.print("No changes made.")
-                return
+                return False
         subprocess.run(
             [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
             capture_output=True,
         )
 
-    # Resolve API key
-    resolved_key: str | None = None
-    if not no_embed_key:
-        if api_key:
-            resolved_key = api_key
-        else:
-            env_key = os.environ.get("ZEROENTROPY_API_KEY")
-            if env_key and click.confirm(
-                "Use $ZEROENTROPY_API_KEY from environment?", default=True,
-            ):
-                resolved_key = env_key
-            else:
-                for _ in range(3):
-                    entered = click.prompt(
-                        "Enter your ZeroEntropy API key",
-                        hide_input=True, default="", show_default=False,
-                    )
-                    if entered.strip():
-                        resolved_key = entered.strip()
-                        break
-                else:
-                    console.print("[red]API key required.[/red]")
-                    sys.exit(1)
-
-    # Resolve probe command + args
-    probe_bin = shutil.which("probe")
-    if probe_bin:
-        probe_command = probe_bin
-        probe_args = ["mcp"]
-    else:
-        probe_command = sys.executable
-        probe_args = ["-m", "probe.cli", "mcp"]
-        console.print(
-            f"[yellow]Note: probe binary not on PATH; using {sys.executable} -m probe.cli. "
-            "If you move this Python env, rerun `probe install`.[/yellow]"
-        )
+    resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
+    probe_command, probe_args = _resolve_probe_command()
 
     # Build the JSON config. Using `claude mcp add-json` instead of
     # `claude mcp add` because the latter's -e flag is variadic and eats
@@ -592,7 +590,7 @@ def install(api_key, no_embed_key, force):
         sys.exit(1)
 
     console.print(
-        "[green]✓ probe installed at user scope.[/green]\n"
+        "[green]✓ probe installed for Claude Code at user scope.[/green]\n"
         "  Open any project in Claude Code and ask a question — "
         "probe will auto-index on first search.\n"
         "  To uninstall: probe uninstall"
@@ -602,16 +600,98 @@ def install(api_key, no_embed_key, force):
     n_enabled = _enable_probe_in_all_projects()
     if n_enabled > 0:
         console.print(f"[dim]  Enabled probe in {n_enabled} project(s) that had it disabled.[/dim]")
+    return True
+
+
+def _install_codex(api_key: str | None, no_embed_key: bool, force: bool) -> bool:
+    codex_bin = shutil.which("codex")
+    if not codex_bin:
+        console.print(
+            "[red]Codex CLI not found.[/red] "
+            "Install Codex, then rerun `probe install --client codex`."
+        )
+        sys.exit(1)
+
+    get_result = subprocess.run([codex_bin, "mcp", "get", "probe"], capture_output=True)
+    if get_result.returncode == 0:
+        if not force:
+            if not click.confirm("probe is already registered in Codex. Reinstall?", default=False):
+                console.print("No changes made.")
+                return False
+        subprocess.run([codex_bin, "mcp", "remove", "probe"], capture_output=True)
+
+    resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
+    probe_command, probe_args = _resolve_probe_command()
+    add_cmd = [codex_bin, "mcp", "add", "probe"]
+    if resolved_key:
+        add_cmd.extend(["--env", f"ZEROENTROPY_API_KEY={resolved_key}"])
+    add_cmd.extend(["--", probe_command, *probe_args])
+
+    add_result = subprocess.run(add_cmd, capture_output=True)
+    if add_result.returncode != 0:
+        console.print(
+            f"[red]codex mcp add failed:[/red]\n{add_result.stderr.decode(errors='replace')}"
+        )
+        sys.exit(1)
+
+    console.print(
+        "[green]✓ probe installed for Codex.[/green]\n"
+        "  Open any project in Codex and ask a question — "
+        "probe will auto-index on first search.\n"
+        "  To uninstall: probe uninstall --client codex"
+    )
+    return True
 
 
 @main.command()
+@click.option(
+    "--client",
+    type=click.Choice(["claude", "codex", "both"]),
+    default="claude",
+    show_default=True,
+    help="Agent client to configure.",
+)
+@click.option("--api-key", default=None, help="ZeroEntropy API key (skip prompt).")
+@click.option("--no-embed-key", is_flag=True,
+              help="Register without embedding API key (rely on shell env).")
+@click.option("--force", is_flag=True, help="Skip already-installed confirmation.")
+def install(client, api_key, no_embed_key, force):
+    """Register probe as a user-scope MCP server in Claude Code or Codex."""
+    if client == "both":
+        resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
+        _install_claude(resolved_key, no_embed_key, force)
+        _install_codex(resolved_key, no_embed_key, force)
+        return
+
+    if client in {"claude", "both"}:
+        _install_claude(api_key, no_embed_key, force)
+    if client in {"codex", "both"}:
+        _install_codex(api_key, no_embed_key, force)
+
+
+@main.command()
+@click.option(
+    "--client",
+    type=click.Choice(["claude", "codex", "both"]),
+    default="claude",
+    show_default=True,
+    help="Agent client to unregister.",
+)
 @click.option("--purge", is_flag=True, help="Also delete .probe/ from cwd.")
-def uninstall(purge):
-    """Unregister probe from Claude Code."""
+def uninstall(client, purge):
+    """Unregister probe from Claude Code or Codex."""
     claude_bin = shutil.which("claude")
-    if claude_bin:
+    if client in {"claude", "both"} and claude_bin:
         subprocess.run(
             [claude_bin, "mcp", "remove", "probe", "--scope", "user"],
+            capture_output=True,
+        )
+        # Ignore errors: "not found" is fine.
+
+    codex_bin = shutil.which("codex")
+    if client in {"codex", "both"} and codex_bin:
+        subprocess.run(
+            [codex_bin, "mcp", "remove", "probe"],
             capture_output=True,
         )
         # Ignore errors: "not found" is fine.

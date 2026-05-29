@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = ROOT / "plugins" / "probe"
+CODEX_PLUGIN_ROOT = ROOT / "plugins" / "probe-codex"
 PROJECT_VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 
 
@@ -62,6 +63,57 @@ def test_mcp_config_runs_probe_from_pypi_with_configured_api_key():
     }
 
 
+def test_codex_marketplace_points_to_probe_plugin():
+    marketplace_path = ROOT / ".agents" / "plugins" / "marketplace.json"
+    marketplace = json.loads(marketplace_path.read_text())
+
+    assert marketplace["name"] == "zeroentropy"
+    assert marketplace["interface"]["displayName"] == "ZeroEntropy"
+
+    probe_entry = next(
+        plugin for plugin in marketplace["plugins"] if plugin["name"] == "probe"
+    )
+    assert probe_entry == {
+        "name": "probe",
+        "source": {
+            "source": "local",
+            "path": "./plugins/probe-codex",
+        },
+        "policy": {
+            "installation": "AVAILABLE",
+            "authentication": "ON_INSTALL",
+        },
+        "category": "Developer Tools",
+    }
+
+
+def test_codex_plugin_manifest_declares_skill_and_mcp_config():
+    manifest_path = CODEX_PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text())
+
+    assert manifest["name"] == "probe"
+    assert manifest["version"] == PROJECT_VERSION
+    assert manifest["repository"] == "https://github.com/zeroentropy-ai/probe"
+    assert manifest["skills"] == "./skills/"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert manifest["interface"]["displayName"] == "probe"
+    assert manifest["interface"]["shortDescription"] == "Search project docs and code"
+    assert manifest["interface"]["developerName"] == "ZeroEntropy"
+    assert manifest["interface"]["category"] == "Developer Tools"
+
+
+def test_codex_mcp_config_runs_probe_from_pypi_with_environment_key():
+    mcp_path = CODEX_PLUGIN_ROOT / ".mcp.json"
+    mcp = json.loads(mcp_path.read_text())
+
+    server = mcp["mcpServers"]["probe"]
+    assert server["command"] == "uvx"
+    assert server["args"] == ["--from", f"probe-search=={PROJECT_VERSION}", "probe", "mcp"]
+    assert server["env"] == {
+        "ZEROENTROPY_API_KEY": "${ZEROENTROPY_API_KEY}",
+    }
+
+
 def test_skill_teaches_agents_to_use_probe_before_file_sweeps():
     skill_path = PLUGIN_ROOT / "skills" / "use-probe" / "SKILL.md"
     raw = skill_path.read_text()
@@ -95,4 +147,8 @@ def test_readme_documents_plugin_install_path():
     assert "/plugin install probe@zeroentropy" in readme
     assert f"uvx --from probe-search=={PROJECT_VERSION} probe mcp" in readme
     assert "If you use the `claude plugin install` shell command" in readme
+    assert "codex plugin marketplace add https://github.com/zeroentropy-ai/probe.git" in readme
+    assert "codex plugin add probe@zeroentropy" in readme
+    assert "probe install --client codex" in readme
+    assert "Cursor" not in readme
     assert "ZeroEntropy API key" in readme

@@ -25,6 +25,7 @@ def test_pypi_metadata_has_discovery_fields():
     assert "semantic-search" in project["keywords"]
     assert "mcp" in project["keywords"]
     assert "claude-code" in project["keywords"]
+    assert "codex" in project["keywords"]
     assert project["urls"]["Repository"] == "https://github.com/zeroentropy-ai/probe"
     assert project["urls"]["Issues"] == "https://github.com/zeroentropy-ai/probe/issues"
     assert project["urls"]["Changelog"] == "https://github.com/zeroentropy-ai/probe/blob/main/CHANGELOG.md"

@@ -27,6 +27,7 @@ class SmokeReport:
     expected_file_matched: bool
     temp_project_kept: bool = False
     claude_ready: bool | None = None
+    codex_ready: bool | None = None
     error: str = ""
 
     def to_dict(self) -> dict:
@@ -40,6 +41,7 @@ class SmokeReport:
             "expected_file_matched": self.expected_file_matched,
             "temp_project_kept": self.temp_project_kept,
             "claude_ready": self.claude_ready,
+            "codex_ready": self.codex_ready,
             "error": self.error,
         }
 
@@ -174,6 +176,7 @@ def run_smoke(
     current: bool = False,
     keep: bool = False,
     claude: bool = False,
+    codex: bool = False,
     embedding_provider: EmbeddingProvider | None = None,
     rerank_provider: RerankProvider | None = None,
 ) -> SmokeReport:
@@ -203,7 +206,22 @@ def run_smoke(
                 expected_file_matched=False,
                 temp_project_kept=bool(keep and not current),
                 claude_ready=False,
+                codex_ready=False if codex else None,
                 error="Claude Code CLI not found.",
+            )
+        if codex and shutil.which("codex") is None:
+            return SmokeReport(
+                status="FAIL",
+                project_path=str(project_path),
+                indexed_files=0,
+                chunks=0,
+                search_result_count=0,
+                expected_file=expected_file,
+                expected_file_matched=False,
+                temp_project_kept=bool(keep and not current),
+                claude_ready=False if claude else None,
+                codex_ready=False,
+                error="Codex CLI not found.",
             )
         if claude:
             from probe.diagnostics import PASS, run_doctor
@@ -225,7 +243,31 @@ def run_smoke(
                     expected_file_matched=False,
                     temp_project_kept=bool(keep and not current),
                     claude_ready=False,
+                    codex_ready=False if codex else None,
                     error="Claude Code does not currently expose probe via MCP or plugin.",
+                )
+        if codex:
+            from probe.diagnostics import PASS, run_doctor
+
+            doctor = run_doctor(cwd=project_path)
+            codex_ready = any(
+                check.name in {"Codex MCP probe", "Codex plugin probe@zeroentropy"}
+                and check.status == PASS
+                for check in doctor.checks
+            )
+            if not codex_ready:
+                return SmokeReport(
+                    status="FAIL",
+                    project_path=str(project_path),
+                    indexed_files=0,
+                    chunks=0,
+                    search_result_count=0,
+                    expected_file=expected_file,
+                    expected_file_matched=False,
+                    temp_project_kept=bool(keep and not current),
+                    claude_ready=True if claude else None,
+                    codex_ready=False,
+                    error="Codex does not currently expose probe via MCP or plugin.",
                 )
         config = load_config(project_path / ".probe" / "config.yaml")
         if embedding_provider is None:
@@ -239,6 +281,8 @@ def run_smoke(
         report.temp_project_kept = bool(keep and not current)
         if claude:
             report.claude_ready = True
+        if codex:
+            report.codex_ready = True
         return report
     except Exception as e:
         return SmokeReport(
@@ -251,6 +295,7 @@ def run_smoke(
             expected_file_matched=False,
             temp_project_kept=bool(keep and not current),
             claude_ready=False if claude else None,
+            codex_ready=False if codex else None,
             error=str(e),
         )
     finally:

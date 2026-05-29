@@ -210,6 +210,70 @@ def _check_claude_plugin(claude_path: str | None, run_command: CommandRunner) ->
     )
 
 
+def _check_codex_mcp(codex_path: str | None, run_command: CommandRunner) -> DiagnosticCheck:
+    if not codex_path:
+        return DiagnosticCheck(
+            "Codex MCP probe",
+            WARN,
+            "Codex CLI not found",
+            "Install Codex or use `probe mcp` with another MCP client.",
+            optional=True,
+        )
+    try:
+        result = run_command(["codex", "mcp", "get", "probe"])
+    except Exception as e:
+        return DiagnosticCheck(
+            "Codex MCP probe",
+            WARN,
+            f"check failed: {e}",
+            "Run `codex mcp get probe` manually for details.",
+            optional=True,
+        )
+    if result.returncode == 0:
+        return DiagnosticCheck("Codex MCP probe", PASS, "registered")
+    return DiagnosticCheck(
+        "Codex MCP probe",
+        WARN,
+        "not registered at direct MCP scope",
+        "Run `probe install --client codex`.",
+        optional=True,
+    )
+
+
+def _check_codex_plugin(codex_path: str | None, run_command: CommandRunner) -> DiagnosticCheck:
+    if not codex_path:
+        return DiagnosticCheck(
+            "Codex plugin probe@zeroentropy",
+            WARN,
+            "Codex CLI not found",
+            "Install Codex to use the plugin.",
+            optional=True,
+        )
+
+    try:
+        result = run_command(["codex", "plugin", "list", "--marketplace", "zeroentropy"])
+    except Exception as e:
+        return DiagnosticCheck(
+            "Codex plugin probe@zeroentropy",
+            WARN,
+            f"check failed: {e}",
+            "Run `codex plugin list --marketplace zeroentropy` manually for details.",
+            optional=True,
+        )
+    output = result.stdout.decode(errors="replace")
+    if result.returncode == 0 and "probe@zeroentropy" in output:
+        return DiagnosticCheck("Codex plugin probe@zeroentropy", PASS, "available")
+    return DiagnosticCheck(
+        "Codex plugin probe@zeroentropy",
+        WARN,
+        "not found in zeroentropy marketplace",
+        "Run `codex plugin marketplace add https://github.com/zeroentropy-ai/probe.git "
+        "--sparse .agents/plugins --sparse plugins/probe-codex` then "
+        "`codex plugin add probe@zeroentropy`.",
+        optional=True,
+    )
+
+
 def run_doctor(
     cwd: Path | None = None,
     strict: bool = False,
@@ -224,6 +288,7 @@ def run_doctor(
     cwd = cwd or Path.cwd()
     env = env or os.environ
     claude_path = which("claude")
+    codex_path = which("codex")
     checks = [
         DiagnosticCheck("probe", PASS, f"{probe.__version__} via {sys.executable}"),
         _check_executable("uvx", which, optional=True, fix="Install uv from https://docs.astral.sh/uv/."),
@@ -231,10 +296,16 @@ def run_doctor(
             "claude", which, optional=True,
             fix="Install Claude Code from https://code.claude.com/docs/.",
         ),
+        _check_executable(
+            "codex", which, optional=True,
+            fix="Install Codex from https://developers.openai.com/codex/.",
+        ),
         _check_api_key(env),
         _check_index(cwd),
         _check_claude_plugin(claude_path, run_command),
         _check_claude_mcp(claude_path, run_command),
+        _check_codex_plugin(codex_path, run_command),
+        _check_codex_mcp(codex_path, run_command),
     ]
     checks = [_maybe_strict(check, strict) for check in checks]
     return DoctorReport(

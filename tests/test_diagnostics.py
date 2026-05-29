@@ -60,30 +60,38 @@ def test_doctor_reports_direct_mcp_registration(tmp_path, monkeypatch):
     monkeypatch.setenv("ZEROENTROPY_API_KEY", "ze_test")
 
     def fake_which(name):
-        return f"/usr/local/bin/{name}" if name in {"uvx", "claude"} else None
+        return f"/usr/local/bin/{name}" if name in {"uvx", "claude", "codex"} else None
 
     def fake_run(cmd):
         if cmd[:3] == ["claude", "mcp", "get"]:
             return FakeCompletedProcess(returncode=0, stdout=b"probe configured")
         if cmd[:3] == ["claude", "plugin", "list"]:
             return FakeCompletedProcess(returncode=0, stdout=b"[]")
+        if cmd[:3] == ["codex", "mcp", "get"]:
+            return FakeCompletedProcess(returncode=0, stdout=b"probe configured")
+        if cmd[:3] == ["codex", "plugin", "list"]:
+            return FakeCompletedProcess(returncode=0, stdout=b"")
         return FakeCompletedProcess(returncode=1)
 
     report = run_doctor(cwd=tmp_path, which=fake_which, run_command=fake_run)
 
-    mcp_check = next(c for c in report.checks if c.name == "Claude MCP probe")
-    assert mcp_check.status == PASS
+    claude_mcp_check = next(c for c in report.checks if c.name == "Claude MCP probe")
+    codex_mcp_check = next(c for c in report.checks if c.name == "Codex MCP probe")
+    assert claude_mcp_check.status == PASS
+    assert codex_mcp_check.status == PASS
 
 
 def test_doctor_recommends_https_plugin_marketplace_url(tmp_path, monkeypatch):
     monkeypatch.setenv("ZEROENTROPY_API_KEY", "ze_test")
 
     def fake_which(name):
-        return f"/usr/local/bin/{name}" if name in {"uvx", "claude"} else None
+        return f"/usr/local/bin/{name}" if name in {"uvx", "claude", "codex"} else None
 
     def fake_run(cmd):
         if cmd[:3] == ["claude", "plugin", "list"]:
             return FakeCompletedProcess(returncode=0, stdout=b"[]")
+        if cmd[:3] == ["codex", "plugin", "list"]:
+            return FakeCompletedProcess(returncode=0, stdout=b"")
         return FakeCompletedProcess(returncode=1)
 
     report = run_doctor(cwd=tmp_path, which=fake_which, run_command=fake_run)
@@ -94,3 +102,12 @@ def test_doctor_recommends_https_plugin_marketplace_url(tmp_path, monkeypatch):
     assert "/plugin marketplace add https://github.com/zeroentropy-ai/probe.git" in plugin_check.fix
     assert "--sparse" not in plugin_check.fix
     assert "/plugin marketplace add zeroentropy-ai/probe " not in plugin_check.fix
+
+    codex_plugin_check = next(
+        c for c in report.checks if c.name == "Codex plugin probe@zeroentropy"
+    )
+    assert "codex plugin marketplace add https://github.com/zeroentropy-ai/probe.git" in (
+        codex_plugin_check.fix
+    )
+    assert "--sparse .agents/plugins" in codex_plugin_check.fix
+    assert "codex plugin add probe@zeroentropy" in codex_plugin_check.fix

@@ -9,7 +9,7 @@
         "mcp"
       ],
       "env": {
-        "ZEROENTROPY_API_KEY": "${user_config.zeroentropy_api_key}"
+        "ZEROENTROPY_API_KEY": "${ZEROENTROPY_API_KEY}"
       }
     }
   }

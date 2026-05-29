@@ -165,6 +165,7 @@ class TestCLI:
     def test_install_command_exists(self, runner):
         result = runner.invoke(main, ["install", "--help"])
         assert result.exit_code == 0
+        assert "--client" in result.output
 
     def test_install_uses_api_key_flag(self, runner, monkeypatch):
         monkeypatch.setattr(
@@ -185,6 +186,92 @@ class TestCLI:
         result = runner.invoke(main, ["install", "--api-key", "sk-test-123"])
         # No key prompt appears in output (non-interactive via flag)
         assert "Enter your ZeroEntropy API key" not in result.output
+
+    def test_install_codex_uses_api_key_flag(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("codex", "probe") else None,
+        )
+        captured = {}
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/codex", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            if cmd[:3] == ["/fake/codex", "mcp", "add"]:
+                captured["cmd"] = cmd
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--client", "codex", "--api-key", "ze-test"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["cmd"] == [
+            "/fake/codex", "mcp", "add", "probe",
+            "--env", "ZEROENTROPY_API_KEY=ze-test",
+            "--", "/fake/probe", "mcp",
+        ]
+        assert "Codex" in result.output
+
+    def test_install_codex_no_embed_key_omits_env(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("codex", "probe") else None,
+        )
+        captured = {}
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/codex", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            if cmd[:3] == ["/fake/codex", "mcp", "add"]:
+                captured["cmd"] = cmd
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--client", "codex", "--no-embed-key"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["cmd"] == [
+            "/fake/codex", "mcp", "add", "probe", "--", "/fake/probe", "mcp",
+        ]
+
+    def test_install_both_reuses_env_key_confirmation(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "codex", "probe") else None,
+        )
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "env-key-xyz")
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[1:3] == ["mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd)
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["install", "--client", "both"], input="\n")
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Use $ZEROENTROPY_API_KEY from environment?") == 1
+        claude_add = next(cmd for cmd in seen if cmd[:3] == ["/fake/claude", "mcp", "add-json"])
+        codex_add = next(cmd for cmd in seen if cmd[:3] == ["/fake/codex", "mcp", "add"])
+        assert json.loads(claude_add[-1])["env"]["ZEROENTROPY_API_KEY"] == "env-key-xyz"
+        assert "ZEROENTROPY_API_KEY=env-key-xyz" in codex_add
 
     def test_install_uses_env_key_by_default(self, runner, monkeypatch):
         monkeypatch.setattr(
@@ -345,6 +432,30 @@ class TestCLI:
         result = runner.invoke(main, ["uninstall"])
         assert result.exit_code == 0
         assert any("remove" in cmd for cmd in seen)
+
+    def test_uninstall_codex_calls_codex_mcp_remove(self, runner, monkeypatch):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name == "codex" else None,
+        )
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd)
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(main, ["uninstall", "--client", "codex"])
+
+        assert result.exit_code == 0
+        assert ["/fake/codex", "mcp", "remove", "probe"] in seen
 
     def test_uninstall_purge_deletes_dot_probe(self, runner, monkeypatch, tmp_path):
         monkeypatch.setattr(

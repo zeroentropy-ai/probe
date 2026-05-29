@@ -2,6 +2,15 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.3 — 2026-05-29
+
+### Added
+- Codex plugin marketplace assets and direct Codex MCP installation via `probe install --client codex`.
+- Codex diagnostics in `probe doctor` and Codex wiring validation in `probe smoke --codex`.
+
+### Changed
+- README now documents Claude Code and Codex install paths, with generic MCP setup for other clients.
+
 ## 0.4.2 — 2026-05-28
 
 ### Fixed

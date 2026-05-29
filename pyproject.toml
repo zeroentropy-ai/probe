@@ -1,6 +1,6 @@
 [project]
 name = "probe-search"
-version = "0.4.2"
+version = "0.4.3"
 description = "AI Agent Context Engine — give your coding agent a brain beyond code"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,7 @@ authors = [
 keywords = [
     "agent-context",
     "claude-code",
+    "codex",
     "coding-agent",
     "mcp",
     "rag",

@@ -58,3 +58,13 @@ def test_smoke_claude_fails_when_claude_cli_missing(tmp_path, monkeypatch):
 
     assert report.status == "FAIL"
     assert "Claude Code CLI not found" in report.error
+
+
+def test_smoke_codex_fails_when_codex_cli_missing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    report = run_smoke(codex=True, embedding_provider=FakeEmbeddingProvider())
+
+    assert report.status == "FAIL"
+    assert "Codex CLI not found" in report.error

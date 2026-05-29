@@ -1,0 +1,20 @@
+{
+  "name": "zeroentropy",
+  "interface": {
+    "displayName": "ZeroEntropy"
+  },
+  "plugins": [
+    {
+      "name": "probe",
+      "source": {
+        "source": "local",
+        "path": "./plugins/probe-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

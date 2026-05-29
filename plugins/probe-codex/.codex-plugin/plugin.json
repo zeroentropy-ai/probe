@@ -1,0 +1,43 @@
+{
+  "name": "probe",
+  "version": "0.4.3",
+  "description": "Use probe to search indexed project knowledge from docs and code through MCP.",
+  "author": {
+    "name": "ZeroEntropy",
+    "email": "founders@zeroentropy.dev",
+    "url": "https://www.zeroentropy.dev"
+  },
+  "homepage": "https://github.com/zeroentropy-ai/probe#readme",
+  "repository": "https://github.com/zeroentropy-ai/probe",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "semantic-search",
+    "codebase-search",
+    "codex",
+    "zeroentropy"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "probe",
+    "shortDescription": "Search project docs and code",
+    "longDescription": "Search indexed project docs, code, text, and PDFs through probe's MCP server before broad file sweeps. probe auto-refreshes changed files and returns focused source locations.",
+    "developerName": "ZeroEntropy",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Use probe to find where auth is documented.",
+      "Search this repo with probe before reading files.",
+      "Find the design notes for this feature."
+    ],
+    "websiteURL": "https://www.zeroentropy.dev/",
+    "privacyPolicyURL": "https://www.zeroentropy.dev/privacy",
+    "termsOfServiceURL": "https://www.zeroentropy.dev/terms",
+    "brandColor": "#111827",
+    "screenshots": []
+  }
+}

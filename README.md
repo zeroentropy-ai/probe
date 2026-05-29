@@ -16,7 +16,7 @@ then serves curated, reranked context to AI coding agents in milliseconds.
 
 - [Why probe](#why-probe)
 - [Quick Start](#quick-start)
-- [MCP Server Setup](#mcp-server-setup-claude-code-cursor)
+- [MCP Server Setup](#mcp-server-setup)
 - [Indexing](#indexing)
 - [How It Works](#how-it-works)
 - [Example Output](#example-output)
@@ -34,13 +34,13 @@ ranked search across docs and code.
 
 What you get:
 
-- Claude Code plugin with bundled MCP server and usage skill
-- Manual Claude Code setup with `probe install`
+- Claude Code and Codex plugins with bundled MCP server and usage skill
+- Manual Claude Code and Codex setup with `probe install`
 - First-use indexing and incremental refresh-before-search
 - Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
 - Cross-encoder reranking with ZeroEntropy `zerank-2`
 - Local index storage in `.probe/`
-- MCP tools and resources for Claude Code, Cursor, and other MCP-compatible agents
+- MCP tools and resources for Claude Code, Codex, and other MCP-compatible agents
 
 ---
 
@@ -63,7 +63,7 @@ slash command treats `--sparse` as part of the URL, so do not pass sparse
 checkout options there.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.2 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.3 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
@@ -75,15 +75,32 @@ claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git --spar
 claude plugin install probe@zeroentropy
 ```
 
-### Manual CLI/MCP setup
+### Codex plugin
+
+Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>. Then run
+from a shell:
+
+```bash
+codex plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .agents/plugins --sparse plugins/probe-codex
+codex plugin add probe@zeroentropy
+export ZEROENTROPY_API_KEY="ze_xxx"
+```
+
+The Codex plugin starts probe with `uvx --from probe-search==0.4.3 probe mcp`.
+Keep `ZEROENTROPY_API_KEY` in your shell environment before starting Codex, or
+run the direct installer below to persist the key in Codex's MCP config.
+
+### Direct CLI/MCP setup
 
 ```bash
 uv tool install probe-search
 # or: pipx install probe-search
 
 export ZEROENTROPY_API_KEY="ze_xxx"
-probe install
+probe install --client claude
+probe install --client codex
 claude mcp list
+codex mcp list
 ```
 
 Use `uv tool install` or `pipx` so the registered `probe` path stays valid. If
@@ -106,17 +123,18 @@ probe doctor
 probe smoke
 ```
 
-`probe doctor` checks your API key, Claude Code wiring, MCP registration, and
+`probe doctor` checks your API key, Claude Code/Codex wiring, MCP registration, and
 local index health without printing secrets or uploading project content.
 `probe smoke` indexes a tiny sample project and confirms search works. Use
-`probe smoke --current` to validate the current repo.
+`probe smoke --current` to validate the current repo, `probe smoke --claude`
+to validate Claude wiring, and `probe smoke --codex` to validate Codex wiring.
 
 ---
 
-## MCP Server Setup (Claude Code, Cursor)
+## MCP Server Setup
 
-The Claude Code plugin is the best default. For Cursor or advanced use, add a
-`.mcp.json` file to your project root:
+The Claude Code and Codex plugins are the best defaults. For another
+MCP-compatible agent, add a `.mcp.json` file to your project root:
 
 ```json
 {
@@ -150,8 +168,8 @@ It also gets MCP resources:
 | `probe://file/{path}` | Read a project file by URL-encoded path |
 
 When Claude Code starts probe, probe uses `CLAUDE_PROJECT_DIR` as the project
-root. That keeps search, indexing, and file reads pinned to the repo even when
-the MCP process starts from another directory.
+root. Other agents should start probe from the project root or set their MCP
+server working directory to the project root.
 
 ---
 
@@ -221,7 +239,9 @@ probe smoke --json
 |---------|-------------|
 | `probe index [paths...]` | Index project files for semantic search |
 | `probe index --full` | Force full re-index |
-| `probe install` | Register probe as a user-scope MCP server in Claude Code |
+| `probe install --client claude` | Register probe as a user-scope MCP server in Claude Code |
+| `probe install --client codex` | Register probe as an MCP server in Codex |
+| `probe install --client both` | Register probe in Claude Code and Codex |
 | `probe search "query"` | Search project knowledge with natural language |
 | `probe search --top-k N` | Limit number of results |
 | `probe search --type code` | Filter by file type |
@@ -233,12 +253,16 @@ probe smoke --json
 | `probe list` | List indexed files |
 | `probe config` | Show current model configuration |
 | `probe init` | Create local config from environment |
-| `probe doctor` | Diagnose API key, Claude Code, MCP, and index setup |
+| `probe doctor` | Diagnose API key, Claude Code, Codex, MCP, and index setup |
 | `probe doctor --json` | Emit machine-readable diagnostics |
 | `probe smoke` | Run an end-to-end indexing and search validation |
 | `probe smoke --current` | Smoke-test the current project |
+| `probe smoke --claude` | Smoke-test search and Claude wiring |
+| `probe smoke --codex` | Smoke-test search and Codex wiring |
 | `probe mcp` | Start MCP server |
-| `probe uninstall [--purge]` | Unregister probe; `--purge` also deletes `.probe/` |
+| `probe uninstall --client claude` | Unregister probe from Claude Code |
+| `probe uninstall --client codex` | Unregister probe from Codex |
+| `probe uninstall --purge` | Unregister probe and delete `.probe/` |
 
 ---
 
