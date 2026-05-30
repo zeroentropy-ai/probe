@@ -603,7 +603,33 @@ def _install_claude(api_key: str | None, no_embed_key: bool, force: bool) -> boo
     return True
 
 
-def _install_codex(api_key: str | None, no_embed_key: bool, force: bool) -> bool:
+def _configure_codex_auto_review(
+    approve_tools: bool,
+    allow_zeroentropy_network: bool,
+) -> None:
+    if not (approve_tools or allow_zeroentropy_network):
+        return
+
+    from probe.codex_config import configure_codex_probe_auto_review
+
+    changes = configure_codex_probe_auto_review(
+        approve_tools=approve_tools,
+        allow_zeroentropy_network=allow_zeroentropy_network,
+    )
+    console.print(
+        "[green]✓ Codex auto-review can use probe without per-call approval.[/green]"
+    )
+    for change in changes:
+        console.print(f"[dim]  Configured {change}.[/dim]")
+
+
+def _install_codex(
+    api_key: str | None,
+    no_embed_key: bool,
+    force: bool,
+    approve_tools: bool = False,
+    allow_zeroentropy_network: bool = False,
+) -> bool:
     codex_bin = shutil.which("codex")
     if not codex_bin:
         console.print(
@@ -616,6 +642,9 @@ def _install_codex(api_key: str | None, no_embed_key: bool, force: bool) -> bool
     if get_result.returncode == 0:
         if not force:
             if not click.confirm("probe is already registered in Codex. Reinstall?", default=False):
+                _configure_codex_auto_review(approve_tools, allow_zeroentropy_network)
+                if approve_tools or allow_zeroentropy_network:
+                    return True
                 console.print("No changes made.")
                 return False
         subprocess.run([codex_bin, "mcp", "remove", "probe"], capture_output=True)
@@ -640,6 +669,7 @@ def _install_codex(api_key: str | None, no_embed_key: bool, force: bool) -> bool
         "probe will auto-index on first search.\n"
         "  To uninstall: probe uninstall --client codex"
     )
+    _configure_codex_auto_review(approve_tools, allow_zeroentropy_network)
     return True
 
 
@@ -655,18 +685,47 @@ def _install_codex(api_key: str | None, no_embed_key: bool, force: bool) -> bool
 @click.option("--no-embed-key", is_flag=True,
               help="Register without embedding API key (rely on shell env).")
 @click.option("--force", is_flag=True, help="Skip already-installed confirmation.")
-def install(client, api_key, no_embed_key, force):
+@click.option(
+    "--approve-tools",
+    is_flag=True,
+    help="For Codex: pre-approve probe MCP tools so auto-review does not block them.",
+)
+@click.option(
+    "--allow-zeroentropy-network",
+    is_flag=True,
+    help="For Codex: allow api.zeroentropy.dev network access for probe indexing/reranking.",
+)
+def install(client, api_key, no_embed_key, force, approve_tools, allow_zeroentropy_network):
     """Register probe as a user-scope MCP server in Claude Code or Codex."""
+    if client == "claude" and approve_tools:
+        raise click.UsageError("--approve-tools requires --client codex or --client both")
+    if client == "claude" and allow_zeroentropy_network:
+        raise click.UsageError(
+            "--allow-zeroentropy-network requires --client codex or --client both"
+        )
+
     if client == "both":
         resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
         _install_claude(resolved_key, no_embed_key, force)
-        _install_codex(resolved_key, no_embed_key, force)
+        _install_codex(
+            resolved_key,
+            no_embed_key,
+            force,
+            approve_tools=approve_tools,
+            allow_zeroentropy_network=allow_zeroentropy_network,
+        )
         return
 
     if client in {"claude", "both"}:
         _install_claude(api_key, no_embed_key, force)
     if client in {"codex", "both"}:
-        _install_codex(api_key, no_embed_key, force)
+        _install_codex(
+            api_key,
+            no_embed_key,
+            force,
+            approve_tools=approve_tools,
+            allow_zeroentropy_network=allow_zeroentropy_network,
+        )
 
 
 @main.command()

@@ -81,6 +81,58 @@ def test_doctor_reports_direct_mcp_registration(tmp_path, monkeypatch):
     assert codex_mcp_check.status == PASS
 
 
+def test_doctor_reports_codex_probe_auto_review_ready(tmp_path, monkeypatch):
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        """
+[sandbox_workspace_write]
+network_access = true
+
+[features.network_proxy]
+enabled = true
+
+[features.network_proxy.domains]
+"api.zeroentropy.dev" = "allow"
+
+[mcp_servers.probe]
+default_tools_approval_mode = "approve"
+
+[mcp_servers.probe.tools.probe_search]
+approval_mode = "approve"
+
+[mcp_servers.probe.tools.probe_index]
+approval_mode = "approve"
+
+[mcp_servers.probe.tools.probe_status]
+approval_mode = "approve"
+
+[mcp_servers.probe.tools.probe_read]
+approval_mode = "approve"
+""".strip()
+    )
+    monkeypatch.setenv("ZEROENTROPY_API_KEY", "ze_test")
+
+    def fake_run(cmd):
+        if cmd[:3] == ["codex", "mcp", "get"]:
+            return FakeCompletedProcess(returncode=0, stdout=b"probe configured")
+        if cmd[:3] == ["codex", "plugin", "list"]:
+            return FakeCompletedProcess(returncode=0, stdout=b"")
+        return FakeCompletedProcess(returncode=1)
+
+    report = run_doctor(
+        cwd=tmp_path,
+        which=lambda name: f"/usr/local/bin/{name}" if name in {"uvx", "codex"} else None,
+        run_command=fake_run,
+        env={"ZEROENTROPY_API_KEY": "ze_test", "CODEX_HOME": str(codex_home)},
+    )
+
+    check = next(c for c in report.checks if c.name == "Codex probe auto-review")
+    assert check.status == PASS
+    assert "tools approved" in check.detail
+    assert "api.zeroentropy.dev allowed" in check.detail
+
+
 def test_doctor_recommends_https_plugin_marketplace_url(tmp_path, monkeypatch):
     monkeypatch.setenv("ZEROENTROPY_API_KEY", "ze_test")
 

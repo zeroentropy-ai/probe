@@ -63,7 +63,7 @@ slash command treats `--sparse` as part of the URL, so do not pass sparse
 checkout options there.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.4 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.5 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
@@ -86,9 +86,20 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.4 probe mcp`.
+The Codex plugin starts probe with `uvx --from probe-search==0.4.5 probe mcp`.
 Keep `ZEROENTROPY_API_KEY` in your shell environment before starting Codex, or
 run the direct installer below to persist the key in Codex's MCP config.
+
+For Codex auto-review workflows, pre-approve probe's MCP tools and allow
+ZeroEntropy network egress once:
+
+```bash
+uv tool install probe-search
+probe install --client codex --approve-tools --allow-zeroentropy-network
+```
+
+This writes a narrow Codex config allowlist for `api.zeroentropy.dev` and
+pre-approves the probe MCP tools, so auto-review does not block each search.
 
 ### Direct CLI/MCP setup
 
@@ -241,6 +252,7 @@ probe smoke --json
 | `probe index --full` | Force full re-index |
 | `probe install --client claude` | Register probe as a user-scope MCP server in Claude Code |
 | `probe install --client codex` | Register probe as an MCP server in Codex |
+| `probe install --client codex --approve-tools --allow-zeroentropy-network` | Configure Codex auto-review to allow probe tool calls and ZeroEntropy egress |
 | `probe install --client both` | Register probe in Claude Code and Codex |
 | `probe search "query"` | Search project knowledge with natural language |
 | `probe search --top-k N` | Limit number of results |

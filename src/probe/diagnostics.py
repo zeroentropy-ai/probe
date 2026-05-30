@@ -274,6 +274,46 @@ def _check_codex_plugin(codex_path: str | None, run_command: CommandRunner) -> D
     )
 
 
+def _check_codex_probe_auto_review(
+    codex_path: str | None,
+    env: Mapping[str, str],
+) -> DiagnosticCheck:
+    if not codex_path:
+        return DiagnosticCheck(
+            "Codex probe auto-review",
+            WARN,
+            "Codex CLI not found",
+            "Install Codex to configure auto-review approval for probe.",
+            optional=True,
+        )
+
+    from probe.codex_config import inspect_codex_probe_auto_review
+
+    status = inspect_codex_probe_auto_review(env)
+    if status.ready:
+        return DiagnosticCheck(
+            "Codex probe auto-review",
+            PASS,
+            "tools approved, api.zeroentropy.dev allowed",
+        )
+
+    missing = []
+    if not status.probe_tools_approved:
+        missing.append("probe MCP tools are not pre-approved")
+    if not status.zeroentropy_network_allowed:
+        missing.append("api.zeroentropy.dev is not allowed through Codex network policy")
+    detail = "; ".join(missing) if missing else "not configured"
+    if not status.exists:
+        detail = f"{status.config_path} not found"
+    return DiagnosticCheck(
+        "Codex probe auto-review",
+        WARN,
+        detail,
+        "Run `probe install --client codex --approve-tools --allow-zeroentropy-network`.",
+        optional=True,
+    )
+
+
 def run_doctor(
     cwd: Path | None = None,
     strict: bool = False,
@@ -306,6 +346,7 @@ def run_doctor(
         _check_claude_mcp(claude_path, run_command),
         _check_codex_plugin(codex_path, run_command),
         _check_codex_mcp(codex_path, run_command),
+        _check_codex_probe_auto_review(codex_path, env),
     ]
     checks = [_maybe_strict(check, strict) for check in checks]
     return DoctorReport(

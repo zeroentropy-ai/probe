@@ -2,6 +2,15 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.5 — 2026-05-29
+
+### Added
+- Codex installer flags for auto-review workflows:
+  `--approve-tools` pre-approves probe MCP tool calls and
+  `--allow-zeroentropy-network` adds a narrow ZeroEntropy network allowlist.
+- `probe doctor` now reports whether Codex is configured to let probe run
+  without per-call auto-review approval.
+
 ## 0.4.4 — 2026-05-29
 
 ### Fixed

@@ -10,6 +10,11 @@ from probe.cli import _print_json, main
 from probe.models import ContextResponse, SearchResult
 from probe.store.database import ProbeDB
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    import tomli as tomllib
+
 
 @pytest.fixture
 def runner():
@@ -243,6 +248,62 @@ class TestCLI:
         assert captured["cmd"] == [
             "/fake/codex", "mcp", "add", "probe", "--", "/fake/probe", "mcp",
         ]
+
+    def test_install_codex_can_preapprove_tools_and_zeroentropy_network(
+        self, runner, monkeypatch, tmp_path,
+    ):
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("codex", "probe") else None,
+        )
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/codex", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(
+            main,
+            [
+                "install",
+                "--client", "codex",
+                "--api-key", "ze-test",
+                "--approve-tools",
+                "--allow-zeroentropy-network",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = tomllib.loads((codex_home / "config.toml").read_text())
+        assert config["sandbox_workspace_write"]["network_access"] is True
+        assert config["features"]["network_proxy"]["enabled"] is True
+        domains = config["features"]["network_proxy"]["domains"]
+        assert domains["api.zeroentropy.dev"] == "allow"
+        assert domains["pypi.org"] == "allow"
+        assert domains["files.pythonhosted.org"] == "allow"
+        direct = config["mcp_servers"]["probe"]
+        assert direct["default_tools_approval_mode"] == "approve"
+        for tool in ("probe_search", "probe_index", "probe_status", "probe_read"):
+            assert direct["tools"][tool]["approval_mode"] == "approve"
+        plugin = config["plugins"]["probe@zeroentropy"]["mcp_servers"]["probe"]
+        assert plugin["default_tools_approval_mode"] == "approve"
+        for tool in ("probe_search", "probe_index", "probe_status", "probe_read"):
+            assert plugin["tools"][tool]["approval_mode"] == "approve"
+        assert "Codex auto-review can use probe" in result.output
+
+    def test_codex_review_flags_require_codex_client(self, runner):
+        result = runner.invoke(main, ["install", "--client", "claude", "--approve-tools"])
+
+        assert result.exit_code == 2
+        assert "--approve-tools requires --client codex or --client both" in result.output
 
     def test_install_both_reuses_env_key_confirmation(self, runner, monkeypatch):
         monkeypatch.setattr(
