@@ -2,6 +2,22 @@
 
 All notable changes to probe are documented here.
 
+## Unreleased
+
+### Changed
+- Indexing now discovers all text-like files and PDFs instead of using a fixed
+  extension whitelist.
+- File discovery now respects nested `.gitignore` files, `.ignore` local
+  overrides, and `.probeignore` probe-specific exclusions with gitignore syntax.
+- Directory traversal now prunes ignored directories before descending and skips
+  obvious binary artifacts.
+
+### Fixed
+- Text containing tiktoken special-token strings such as `<|endoftext|>` no
+  longer crashes indexing or search result budgeting.
+- Index and refresh now skip malformed/unreadable files, report failure counts,
+  and keep the previous good chunks when re-indexing a changed file fails.
+
 ## 0.4.5 — 2026-05-29
 
 ### Added

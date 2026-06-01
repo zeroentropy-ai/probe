@@ -41,6 +41,7 @@ dependencies = [
     "pyyaml>=6.0",
     "mcp>=1.0",
     "tiktoken>=0.7",
+    "pathspec>=0.12",
 ]
 
 [project.optional-dependencies]

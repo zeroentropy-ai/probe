@@ -157,8 +157,15 @@ def index(paths, full):
         f"\n[green]Done![/green] "
         f"Indexed {stats['files_indexed']} files, "
         f"created {stats['chunks_created']} chunks, "
-        f"skipped {stats['files_skipped']} unchanged files."
+        f"skipped {stats['files_skipped']} unchanged files, "
+        f"failed {stats.get('files_failed', 0)} files."
     )
+    for failure in stats.get("failed_files", [])[:5]:
+        console.print(f"[yellow]Skipped {failure['path']}: {failure['error']}[/yellow]")
+    if len(stats.get("failed_files", [])) > 5:
+        console.print(
+            f"[yellow]Skipped {len(stats['failed_files']) - 5} more files.[/yellow]"
+        )
     db.close()
 
 
@@ -198,11 +205,13 @@ def search(query, top_k, max_tokens, file_types, no_rerank, json_output):
             total_changed = (
                 refresh_stats["added"] + refresh_stats["changed"] + refresh_stats["removed"]
             )
+            failed = refresh_stats.get("failed", 0)
             refreshed_info = refresh_stats
-            if total_changed > 0 and not json_output:
+            if (total_changed > 0 or failed > 0) and not json_output:
                 console.print(
                     f"[dim]Refreshed: +{refresh_stats['added']} "
                     f"±{refresh_stats['changed']} -{refresh_stats['removed']} "
+                    f"!{failed} "
                     f"({refresh_stats['elapsed_ms']}ms)[/dim]"
                 )
         except Exception as e:

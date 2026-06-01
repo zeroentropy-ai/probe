@@ -37,7 +37,7 @@ What you get:
 - Claude Code and Codex plugins with bundled MCP server and usage skill
 - Manual Claude Code and Codex setup with `probe install`
 - MCP first-use indexing and incremental refresh-before-search
-- Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
+- Hybrid keyword + semantic retrieval across text files, code, docs, and PDFs
 - Cross-encoder reranking with ZeroEntropy `zerank-2`
 - Local index storage in `.probe/`
 - MCP tools and resources for Claude Code, Codex, and other MCP-compatible agents
@@ -187,12 +187,15 @@ server working directory to the project root.
 
 ## Indexing
 
-probe indexes Markdown, MDX, plain text, reStructuredText, AsciiDoc, TeX, YAML,
-JSON, PDFs, and code in Python, JavaScript, TypeScript, TSX, JSX, Go, Rust, and
-Java.
+probe indexes all text-like files and PDFs, not just a fixed extension list.
+Unknown extensions and extensionless files such as `Makefile`, `Dockerfile`, and
+local config files are indexed if they look like text.
 
-File discovery respects root `.gitignore` and `.probeignore` files. It also
-skips `.git/`, `.probe/`, `__pycache__/`, `.venv/`, and `*.pyc`.
+File discovery respects nested `.gitignore` files. It also reads `.ignore`
+files with higher precedence than `.gitignore`, which lets you keep files out
+of Git while still letting probe index them. Use `.probeignore` for
+probe-specific exclusions. probe always skips `.git/`, `.probe/`,
+`__pycache__/`, `.venv/`, compiled Python files, and obvious binary artifacts.
 
 In MCP mode, the first `probe_search` creates the local `.probe/` index
 automatically. For CLI-only use, run `probe index .` once. After `.probe/`

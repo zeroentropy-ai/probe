@@ -30,8 +30,18 @@ class TestDiscoverFiles:
         assert "auth.py" in paths
         assert "notes.txt" in paths
 
-    def test_filters_unsupported_extensions(self, tmp_path: Path):
-        (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    def test_finds_text_files_without_known_extensions(self, tmp_path: Path):
+        (tmp_path / "Makefile").write_text("test:\n\tpytest\n")
+        (tmp_path / "Dockerfile").write_text("FROM python:3.12\n")
+        (tmp_path / "settings.local").write_text("feature=true\n")
+        files = discover_files([tmp_path])
+        names = {f.name for f in files}
+        assert "Makefile" in names
+        assert "Dockerfile" in names
+        assert "settings.local" in names
+
+    def test_skips_binary_files(self, tmp_path: Path):
+        (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x00binary")
         (tmp_path / "doc.md").write_text("hello")
         files = discover_files([tmp_path])
         names = {f.name for f in files}
@@ -54,6 +64,29 @@ class TestDiscoverFiles:
         names = {f.name for f in files}
         assert "keep.md" in names
         assert "skip.md" not in names
+
+    def test_respects_ignore_file_as_local_override(self, tmp_path: Path):
+        (tmp_path / ".gitignore").write_text("local/\n")
+        (tmp_path / ".ignore").write_text("!local/\n!local/**\n")
+        (tmp_path / "local").mkdir()
+        (tmp_path / "local" / "notes.local").write_text("index this local context\n")
+
+        files = discover_files([tmp_path])
+
+        paths = {str(f.relative_to(tmp_path)) for f in files}
+        assert "local/notes.local" in paths
+
+    def test_probeignore_has_highest_precedence(self, tmp_path: Path):
+        (tmp_path / ".gitignore").write_text("local/\n")
+        (tmp_path / ".ignore").write_text("!local/\n!local/**\n")
+        (tmp_path / ".probeignore").write_text("local/\n")
+        (tmp_path / "local").mkdir()
+        (tmp_path / "local" / "notes.local").write_text("do not index\n")
+
+        files = discover_files([tmp_path])
+
+        paths = {str(f.relative_to(tmp_path)) for f in files}
+        assert "local/notes.local" not in paths
 
 
 class TestFileHash:

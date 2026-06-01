@@ -38,13 +38,15 @@ class IndexPipeline:
         """Index a single file: delete old chunks, extract, chunk, persist.
         Returns (new_chunk_texts, new_chunk_ids) so the caller can batch-embed.
         Raises on extract/chunk errors; caller decides what to do."""
-        # Remove any existing DB rows for this file before re-adding
+        content = extract_content(file_path)
+
+        # Remove any existing DB rows only after extraction succeeds. If a
+        # changed file becomes unreadable or malformed, callers keep the last
+        # good index instead of replacing it with nothing.
         self.db.delete_file(rel_path)
 
-        content = extract_content(file_path)
         if not content.strip():
-            # File is now empty; caller (which tracked old chunk IDs before
-            # calling) handles vector-store deletion; we just signal "nothing new".
+            # File is now empty; caller handles vector-store deletion.
             return ([], [])
 
         chunks = chunk_content(content, rel_path, file_type)
@@ -78,6 +80,8 @@ class IndexPipeline:
         files_skipped = 0
         chunks_created = 0
         files_removed = 0
+        files_failed = 0
+        failed_files: list[dict[str, str]] = []
         new_chunk_texts: list[str] = []
         new_chunk_ids: list[int] = []
         deleted_chunk_ids: set[int] = set()
@@ -112,12 +116,18 @@ class IndexPipeline:
 
             # Track old chunk IDs for vector deletion before re-adding
             old_ids = self.db.get_chunk_ids_for_file(rel_path)
-            deleted_chunk_ids.update(old_ids)
 
-            texts, ids = self._index_file(
-                file_path, rel_path, file_type, file_hash,
-                mtime_ns=stat.st_mtime_ns, size=stat.st_size,
-            )
+            try:
+                texts, ids = self._index_file(
+                    file_path, rel_path, file_type, file_hash,
+                    mtime_ns=stat.st_mtime_ns, size=stat.st_size,
+                )
+            except Exception as exc:
+                files_failed += 1
+                failed_files.append({"path": rel_path, "error": str(exc)})
+                continue
+
+            deleted_chunk_ids.update(old_ids)
             if not texts:
                 continue
             new_chunk_texts.extend(texts)
@@ -145,13 +155,15 @@ class IndexPipeline:
             "files_indexed": files_indexed,
             "files_skipped": files_skipped,
             "chunks_created": chunks_created,
+            "files_failed": files_failed,
+            "failed_files": failed_files,
         }
 
     def refresh_changed(self, paths: list[Path]) -> dict:
         """Incrementally re-index files that changed since last index.
 
         Two-phase: (1) cheap stat sweep to detect candidates, (2) hash confirm
-        and re-embed. Returns {added, changed, removed, elapsed_ms}."""
+        and re-embed. Returns {added, changed, removed, failed, elapsed_ms}."""
         import time as _time
         t0 = _time.monotonic()
 
@@ -203,6 +215,8 @@ class IndexPipeline:
         # Phase 2: hash-confirm each candidate and re-index if content actually changed.
         added = 0
         changed = 0
+        failed = 0
+        failed_files: list[dict[str, str]] = []
         new_chunk_texts: list[str] = []
         new_chunk_ids: list[int] = []
         candidate_deleted_ids: set[int] = set()
@@ -220,12 +234,18 @@ class IndexPipeline:
 
             # Real content change (or new file): re-index.
             old_ids = self.db.get_chunk_ids_for_file(rel_path)
-            candidate_deleted_ids.update(old_ids)
 
-            texts, ids = self._index_file(
-                file_path, rel_path, file_type, file_hash,
-                mtime_ns=mtime_ns, size=size,
-            )
+            try:
+                texts, ids = self._index_file(
+                    file_path, rel_path, file_type, file_hash,
+                    mtime_ns=mtime_ns, size=size,
+                )
+            except Exception as exc:
+                failed += 1
+                failed_files.append({"path": rel_path, "error": str(exc)})
+                continue
+
+            candidate_deleted_ids.update(old_ids)
             if not texts:
                 continue
             new_chunk_texts.extend(texts)
@@ -250,4 +270,11 @@ class IndexPipeline:
             self.vector_store.save()
 
         elapsed_ms = int((_time.monotonic() - t0) * 1000)
-        return {"added": added, "changed": changed, "removed": removed, "elapsed_ms": elapsed_ms}
+        return {
+            "added": added,
+            "changed": changed,
+            "removed": removed,
+            "failed": failed,
+            "failed_files": failed_files,
+            "elapsed_ms": elapsed_ms,
+        }

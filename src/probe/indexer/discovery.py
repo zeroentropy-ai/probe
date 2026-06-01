@@ -1,64 +1,143 @@
-"""File discovery with .gitignore/.probeignore support."""
+"""File discovery with gitignore-style ignore support."""
 
 from __future__ import annotations
 
 import fnmatch
 import hashlib
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
-SUPPORTED_EXTENSIONS = {
-    ".md", ".mdx", ".txt", ".pdf",
-    ".py", ".js", ".ts", ".tsx", ".jsx",
-    ".go", ".rs", ".java",
-    ".yaml", ".yml", ".json",
-    ".rst", ".adoc", ".tex",
+from pathspec import GitIgnoreSpec
+
+TEXT_SAMPLE_BYTES = 8192
+ALWAYS_IGNORE_DIRS = {".git", ".probe", "__pycache__", ".venv"}
+ALWAYS_IGNORE_FILE_PATTERNS = {"*.pyc", "*.pyo"}
+PDF_EXTENSIONS = {".pdf"}
+OBVIOUS_BINARY_EXTENSIONS = {
+    ".7z", ".a", ".avi", ".bmp", ".bz2", ".class", ".db", ".dll", ".dmg",
+    ".dylib", ".eot", ".exe", ".gif", ".gz", ".ico", ".jar", ".jpeg", ".jpg",
+    ".lockb", ".mov", ".mp3", ".mp4", ".o", ".obj", ".otf", ".png", ".pyc",
+    ".pyo", ".rar", ".sqlite", ".sqlite3", ".tar", ".tgz", ".ttf", ".wasm",
+    ".webm", ".webp", ".woff", ".woff2", ".xz", ".zip", ".zst",
 }
 
 
-def _parse_ignore_file(path: Path) -> list[str]:
-    if not path.exists():
-        return []
-    patterns = []
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            patterns.append(line)
-    return patterns
+@dataclass
+class _IgnoreMatcher:
+    """Match paths using gitignore syntax and ripgrep-like precedence."""
 
+    root: Path
+    gitignore_specs: list[tuple[Path, GitIgnoreSpec]] = field(default_factory=list)
+    ignore_specs: list[tuple[Path, GitIgnoreSpec]] = field(default_factory=list)
+    probeignore_specs: list[tuple[Path, GitIgnoreSpec]] = field(default_factory=list)
 
-def _is_ignored(file_path: Path, base_dir: Path, patterns: list[str]) -> bool:
-    rel = str(file_path.relative_to(base_dir))
-    for pattern in patterns:
-        if pattern.endswith("/"):
-            dir_pattern = pattern.rstrip("/")
-            if any(part == dir_pattern for part in file_path.relative_to(base_dir).parts):
-                return True
-        if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(file_path.name, pattern):
+    def load_directory(self, directory: Path) -> None:
+        self._load_file(directory / ".gitignore", self.gitignore_specs)
+        self._load_file(directory / ".ignore", self.ignore_specs)
+        self._load_file(directory / ".probeignore", self.probeignore_specs)
+
+    def is_ignored(self, path: Path, *, is_dir: bool = False) -> bool:
+        try:
+            rel_parts = path.relative_to(self.root).parts
+        except ValueError:
+            return False
+
+        if any(part in ALWAYS_IGNORE_DIRS for part in rel_parts):
             return True
-    return False
+        if not is_dir and any(
+            fnmatch.fnmatch(path.name, pattern) for pattern in ALWAYS_IGNORE_FILE_PATTERNS
+        ):
+            return True
+
+        decision = self._category_decision(self.gitignore_specs, path, is_dir=is_dir)
+        ignore_decision = self._category_decision(self.ignore_specs, path, is_dir=is_dir)
+        if ignore_decision is not None:
+            decision = ignore_decision
+        probe_decision = self._category_decision(self.probeignore_specs, path, is_dir=is_dir)
+        if probe_decision is not None:
+            decision = probe_decision
+        return bool(decision)
+
+    def _load_file(
+        self,
+        path: Path,
+        specs: list[tuple[Path, GitIgnoreSpec]],
+    ) -> None:
+        if not path.exists():
+            return
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return
+        specs.append((path.parent, GitIgnoreSpec.from_lines(lines)))
+
+    def _category_decision(
+        self,
+        specs: list[tuple[Path, GitIgnoreSpec]],
+        path: Path,
+        *,
+        is_dir: bool,
+    ) -> bool | None:
+        decision: bool | None = None
+        for base_dir, spec in specs:
+            try:
+                rel = path.relative_to(base_dir).as_posix()
+            except ValueError:
+                continue
+            if is_dir and not rel.endswith("/"):
+                rel = f"{rel}/"
+            match = spec.check_file(rel)
+            if match.include is not None:
+                decision = bool(match.include)
+        return decision
+
+
+def _looks_indexable(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix in PDF_EXTENSIONS:
+        return True
+    if suffix in OBVIOUS_BINARY_EXTENSIONS:
+        return False
+    try:
+        with path.open("rb") as f:
+            sample = f.read(TEXT_SAMPLE_BYTES)
+    except OSError:
+        return False
+    return b"\x00" not in sample
 
 
 def discover_files(paths: list[Path]) -> list[Path]:
-    result = []
+    result: list[Path] = []
     for path in paths:
         if path.is_file():
-            if path.suffix in SUPPORTED_EXTENSIONS:
+            if _looks_indexable(path):
                 result.append(path)
             continue
 
-        ignore_patterns = []
-        ignore_patterns.extend(_parse_ignore_file(path / ".gitignore"))
-        ignore_patterns.extend(_parse_ignore_file(path / ".probeignore"))
-        ignore_patterns.extend([".git/", ".probe/", "__pycache__/", ".venv/", "*.pyc"])
+        if not path.is_dir():
+            continue
 
-        for file_path in sorted(path.rglob("*")):
-            if not file_path.is_file():
-                continue
-            if file_path.suffix not in SUPPORTED_EXTENSIONS:
-                continue
-            if _is_ignored(file_path, path, ignore_patterns):
-                continue
-            result.append(file_path)
+        root = path.resolve()
+        matcher = _IgnoreMatcher(root=root)
+
+        for dirpath, dirnames, filenames in os.walk(root):
+            current_dir = Path(dirpath)
+            matcher.load_directory(current_dir)
+
+            dirnames[:] = [
+                dirname
+                for dirname in sorted(dirnames)
+                if not matcher.is_ignored(current_dir / dirname, is_dir=True)
+            ]
+
+            for filename in sorted(filenames):
+                file_path = current_dir / filename
+                if matcher.is_ignored(file_path):
+                    continue
+                if not _looks_indexable(file_path):
+                    continue
+                result.append(file_path)
     return result
 
 

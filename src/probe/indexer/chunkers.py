@@ -13,7 +13,7 @@ _enc = tiktoken.get_encoding("cl100k_base")
 
 
 def _count_tokens(text: str) -> int:
-    return len(_enc.encode(text))
+    return len(_enc.encode(text, disallowed_special=()))
 
 
 def _line_range(source_text: str, char_start: int, char_end: int) -> tuple[int, int]:

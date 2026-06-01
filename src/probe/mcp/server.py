@@ -251,7 +251,14 @@ def create_mcp_server() -> FastMCP:
 
         # Unified refresh (replaces the old "auto-index if empty" path — when the
         # DB is empty, every file is "new" so phase 2 indexes the whole project).
-        refreshed_info: dict = {"added": 0, "changed": 0, "removed": 0, "elapsed_ms": 0}
+        refreshed_info: dict = {
+            "added": 0,
+            "changed": 0,
+            "removed": 0,
+            "failed": 0,
+            "failed_files": [],
+            "elapsed_ms": 0,
+        }
         gate = state.refresh_gate
         if gate.should_refresh():
             t_refresh = _time.monotonic()
@@ -274,7 +281,12 @@ def create_mcp_server() -> FastMCP:
             except Exception as e:
                 elapsed_ms = int((_time.monotonic() - t_refresh) * 1000)
                 refreshed_info = {
-                    "added": 0, "changed": 0, "removed": 0, "elapsed_ms": elapsed_ms,
+                    "added": 0,
+                    "changed": 0,
+                    "removed": 0,
+                    "failed": 0,
+                    "failed_files": [],
+                    "elapsed_ms": elapsed_ms,
                     "error": str(e),
                 }
 

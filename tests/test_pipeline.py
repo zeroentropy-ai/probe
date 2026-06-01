@@ -1,5 +1,6 @@
 """Tests for the indexing pipeline."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -55,6 +56,18 @@ class TestIndexPipeline:
     def test_embedding_provider_called(self, pipeline, fixtures_dir, mock_embedding_provider):
         pipeline.index([fixtures_dir])
         assert mock_embedding_provider.embed.called
+
+    def test_index_skips_files_that_fail_extraction(self, pipeline, tmp_path):
+        (tmp_path / "good.md").write_text("# Good\n\nSearchable project context.")
+        (tmp_path / "broken.pdf").write_text("not actually a pdf")
+
+        stats = pipeline.index([tmp_path])
+
+        assert stats["files_indexed"] == 1
+        assert stats["files_failed"] == 1
+        assert len(stats["failed_files"]) == 1
+        assert Path(stats["failed_files"][0]["path"]).name == "broken.pdf"
+        assert {Path(f["path"]).name for f in pipeline.db.list_files()} == {"good.md"}
 
     def test_vectors_saved(self, pipeline, fixtures_dir, tmp_probe_dir):
         pipeline.index([fixtures_dir])
@@ -152,6 +165,32 @@ class TestIndexPipeline:
         assert stats["changed"] == 0
         assert stats["added"] == 0
         assert mock_embedding_provider.embed.call_count == 0
+
+    def test_refresh_keeps_existing_index_when_reindex_fails(
+        self, pipeline, tmp_path, monkeypatch,
+    ):
+        target = tmp_path / "notes.txt"
+        target.write_text("stable searchable context")
+        pipeline.index([tmp_path])
+
+        target.write_text("changed content")
+
+        def fail_extract(path):
+            if path == target:
+                raise OSError("cannot read")
+            raise AssertionError(f"unexpected path: {path}")
+
+        monkeypatch.setattr("probe.indexer.pipeline.extract_content", fail_extract)
+
+        stats = pipeline.refresh_changed([tmp_path])
+
+        assert stats["failed"] == 1
+        assert len(stats["failed_files"]) == 1
+        assert Path(stats["failed_files"][0]["path"]).name == "notes.txt"
+        assert {Path(f["path"]).name for f in pipeline.db.list_files()} == {"notes.txt"}
+        chunks = pipeline.db.get_all_chunks()
+        assert len(chunks) == 1
+        assert chunks[0]["content"] == "stable searchable context"
 
     def test_root_dir_stores_project_relative_paths_when_cwd_differs(
         self, tmp_path, mock_embedding_provider, monkeypatch,

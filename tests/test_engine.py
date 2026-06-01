@@ -94,3 +94,25 @@ class TestContextEngine:
         auth_result = next(r for r in response.results if r.file == "docs/auth.md")
         assert auth_result.line_start == 4
         assert auth_result.line_end == 4
+
+    def test_result_budget_treats_tiktoken_special_token_text_as_normal_content(
+        self, engine,
+    ):
+        file_id = engine.db.add_file("notes.txt", "h3", "text")
+        chunk_id = engine.db.add_chunk(
+            file_id,
+            0,
+            "before <|endoftext|> after",
+            "text",
+            0,
+            28,
+            5,
+        )
+        engine.vector_store.add(
+            [chunk_id],
+            np.array([[0.9, 0.1, 0.0, 0.0]], dtype=np.float32),
+        )
+
+        response = engine.search("before", rerank=False)
+
+        assert any(result.file == "notes.txt" for result in response.results)

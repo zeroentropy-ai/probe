@@ -70,6 +70,11 @@ class TestTextChunker:
         chunks = chunk_text(content, "tiny.txt")
         assert len(chunks) == 1
 
+    def test_counts_tiktoken_special_token_text_as_normal_content(self):
+        chunks = chunk_text("before <|endoftext|> after", "notes.txt")
+        assert len(chunks) == 1
+        assert chunks[0].token_count > 0
+
 
 class TestPDFChunker:
     def test_splits_on_page_breaks(self):

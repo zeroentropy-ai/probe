@@ -81,7 +81,7 @@ class ContextEngine:
         results: list[SearchResult] = []
         total_tokens = 0
         for chunk, score in candidates[:top_k]:
-            chunk_tokens = len(_enc.encode(chunk["content"]))
+            chunk_tokens = len(_enc.encode(chunk["content"], disallowed_special=()))
             if total_tokens + chunk_tokens > max_tokens and results:
                 break
             results.append(SearchResult(
