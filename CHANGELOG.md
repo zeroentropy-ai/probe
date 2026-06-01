@@ -2,6 +2,13 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.8 — 2026-06-01
+
+### Changed
+- Claude Code plugin installs now surface secure-storage warnings when the
+  plugin API key config cannot be saved, while direct MCP registration still
+  embeds the key as a fallback.
+
 ## 0.4.7 — 2026-06-01
 
 ### Added

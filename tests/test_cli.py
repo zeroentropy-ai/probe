@@ -429,6 +429,37 @@ class TestCLI:
         assert result.exit_code != 0
         assert "--plugin for Claude Code requires an API key" in result.output
 
+    def test_install_claude_plugin_surfaces_config_warning(
+        self, runner, monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/claude", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            if cmd[:3] == ["/fake/claude", "plugin", "install"]:
+                r.stderr = b"Installed, but --config not applied"
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(
+            main,
+            ["install", "--client", "claude", "--plugin", "--api-key", "ze-test"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "did not save" in result.output
+        assert "plugin API" in result.output
+        assert "/plugin configure probe@zeroentropy" in result.output
+
     def test_codex_review_flags_require_codex_client(self, runner):
         result = runner.invoke(main, ["install", "--client", "claude", "--approve-tools"])
 

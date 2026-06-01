@@ -605,13 +605,19 @@ def _codex_env(codex_home: Path | None = None) -> dict[str, str] | None:
     return env
 
 
-def _run_checked(cmd: list[str], *, env: dict[str, str] | None = None, label: str) -> None:
+def _run_checked(
+    cmd: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    label: str,
+) -> subprocess.CompletedProcess:
     result = subprocess.run(cmd, capture_output=True, env=env)
     if result.returncode != 0:
         console.print(
             f"[red]{label} failed:[/red]\n{result.stderr.decode(errors='replace')}"
         )
         sys.exit(1)
+    return result
 
 
 def _install_claude_plugin(claude_bin: str, api_key: str | None) -> None:
@@ -626,10 +632,21 @@ def _install_claude_plugin(claude_bin: str, api_key: str | None) -> None:
     if api_key:
         install_cmd.extend(["--config", f"zeroentropy_api_key={api_key}"])
     install_cmd.append("probe@zeroentropy")
-    _run_checked(
+    result = _run_checked(
         install_cmd,
         label="claude plugin install",
     )
+    output = (
+        result.stdout.decode(errors="replace")
+        + result.stderr.decode(errors="replace")
+    ).lower()
+    if api_key and "config not applied" in output:
+        console.print(
+            "[yellow]Warning: Claude Code installed the probe plugin but did not "
+            "save the plugin API key config. The direct MCP registration below "
+            "will still embed the key; for plugin-only use, run `/plugin configure "
+            "probe@zeroentropy` inside Claude Code.[/yellow]"
+        )
     console.print("[green]✓ probe Claude Code plugin installed.[/green]")
 
 

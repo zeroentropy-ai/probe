@@ -63,7 +63,7 @@ slash command treats `--sparse` as part of the URL, so do not pass sparse
 checkout options there.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.7 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.8 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
@@ -93,7 +93,7 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.7 probe mcp`.
+The Codex plugin starts probe with `uvx --from probe-search==0.4.8 probe mcp`.
 Keep `ZEROENTROPY_API_KEY` in your shell environment before starting Codex, or
 run the direct installer below to persist the key in Codex's MCP config.
 
