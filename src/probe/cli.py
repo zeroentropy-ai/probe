@@ -20,6 +20,7 @@ from probe.indexer.refresh_gate import RefreshGate
 
 console = Console()
 PROBE_DIR_NAME = ".probe"
+PROBE_MARKETPLACE_URL = "https://github.com/zeroentropy-ai/probe.git"
 
 
 def _find_probe_dir(create: bool = False) -> Path:
@@ -329,11 +330,28 @@ def status(json_output):
 @click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
 @click.option("--strict", is_flag=True, help="Treat optional warnings as failures")
 @click.option("--no-network", is_flag=True, help="Skip network reachability checks")
-def doctor(json_output, strict, no_network):
+@click.option(
+    "--codex-home",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Use this CODEX_HOME config directory for Codex checks.",
+)
+@click.option(
+    "--codex-bin",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to the codex executable for Codex checks.",
+)
+def doctor(json_output, strict, no_network, codex_home, codex_bin):
     """Check local probe, API key, index, Claude Code, and Codex setup."""
     from probe.diagnostics import FAIL, PASS, WARN, run_doctor
 
-    report = run_doctor(strict=strict, no_network=no_network)
+    report = run_doctor(
+        strict=strict,
+        no_network=no_network,
+        codex_home=codex_home,
+        codex_bin=codex_bin,
+    )
     if json_output:
         _print_json(report.to_dict())
     else:
@@ -362,11 +380,30 @@ def doctor(json_output, strict, no_network):
 @click.option("--keep", is_flag=True, help="Keep the temporary sample project")
 @click.option("--claude", is_flag=True, help="Also validate local Claude wiring")
 @click.option("--codex", is_flag=True, help="Also validate local Codex wiring")
-def smoke(current, json_output, keep, claude, codex):
+@click.option(
+    "--codex-home",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Use this CODEX_HOME config directory for Codex wiring validation.",
+)
+@click.option(
+    "--codex-bin",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to the codex executable for Codex wiring validation.",
+)
+def smoke(current, json_output, keep, claude, codex, codex_home, codex_bin):
     """Run an end-to-end indexing and search validation."""
     from probe.smoke import run_smoke
 
-    report = run_smoke(current=current, keep=keep, claude=claude, codex=codex)
+    report = run_smoke(
+        current=current,
+        keep=keep,
+        claude=claude,
+        codex=codex,
+        codex_home=codex_home,
+        codex_bin=codex_bin,
+    )
     if json_output:
         _print_json(report.to_dict())
     else:
@@ -545,6 +582,76 @@ def _resolve_probe_command() -> tuple[str, list[str]]:
     return sys.executable, ["-m", "probe.cli", "mcp"]
 
 
+def _resolve_codex_bin(codex_bin: Path | None = None) -> str:
+    if codex_bin is not None:
+        return str(codex_bin.expanduser())
+    resolved = shutil.which("codex")
+    if resolved:
+        return resolved
+    console.print(
+        "[red]Codex CLI not found.[/red] "
+        "Install Codex, pass --codex-bin, or rerun `probe install --client codex`."
+    )
+    sys.exit(1)
+
+
+def _codex_env(codex_home: Path | None = None) -> dict[str, str] | None:
+    if codex_home is None:
+        return None
+    home = codex_home.expanduser()
+    home.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(home)
+    return env
+
+
+def _run_checked(cmd: list[str], *, env: dict[str, str] | None = None, label: str) -> None:
+    result = subprocess.run(cmd, capture_output=True, env=env)
+    if result.returncode != 0:
+        console.print(
+            f"[red]{label} failed:[/red]\n{result.stderr.decode(errors='replace')}"
+        )
+        sys.exit(1)
+
+
+def _install_claude_plugin(claude_bin: str, api_key: str | None) -> None:
+    _run_checked(
+        [
+            claude_bin, "plugin", "marketplace", "add", PROBE_MARKETPLACE_URL,
+            "--sparse", ".claude-plugin", "plugins",
+        ],
+        label="claude plugin marketplace add",
+    )
+    install_cmd = [claude_bin, "plugin", "install"]
+    if api_key:
+        install_cmd.extend(["--config", f"zeroentropy_api_key={api_key}"])
+    install_cmd.append("probe@zeroentropy")
+    _run_checked(
+        install_cmd,
+        label="claude plugin install",
+    )
+    console.print("[green]✓ probe Claude Code plugin installed.[/green]")
+
+
+def _install_codex_plugin(codex_bin: str, codex_home: Path | None = None) -> None:
+    env = _codex_env(codex_home)
+    _run_checked(
+        [
+            codex_bin, "plugin", "marketplace", "add", PROBE_MARKETPLACE_URL,
+            "--sparse", ".agents/plugins",
+            "--sparse", "plugins/probe-codex",
+        ],
+        env=env,
+        label="codex plugin marketplace add",
+    )
+    _run_checked(
+        [codex_bin, "plugin", "add", "probe@zeroentropy"],
+        env=env,
+        label="codex plugin add",
+    )
+    console.print("[green]✓ probe Codex plugin installed.[/green]")
+
+
 def _install_claude(api_key: str | None, no_embed_key: bool, force: bool) -> bool:
     claude_bin = shutil.which("claude")
     if not claude_bin:
@@ -615,13 +722,16 @@ def _install_claude(api_key: str | None, no_embed_key: bool, force: bool) -> boo
 def _configure_codex_auto_review(
     approve_tools: bool,
     allow_zeroentropy_network: bool,
+    codex_home: Path | None = None,
 ) -> None:
     if not (approve_tools or allow_zeroentropy_network):
         return
 
     from probe.codex_config import configure_codex_probe_auto_review
 
+    env = _codex_env(codex_home)
     changes = configure_codex_probe_auto_review(
+        env=env,
         approve_tools=approve_tools,
         allow_zeroentropy_network=allow_zeroentropy_network,
     )
@@ -638,34 +748,44 @@ def _install_codex(
     force: bool,
     approve_tools: bool = False,
     allow_zeroentropy_network: bool = False,
+    codex_home: Path | None = None,
+    codex_bin: Path | None = None,
+    install_plugin: bool = False,
 ) -> bool:
-    codex_bin = shutil.which("codex")
-    if not codex_bin:
-        console.print(
-            "[red]Codex CLI not found.[/red] "
-            "Install Codex, then rerun `probe install --client codex`."
-        )
-        sys.exit(1)
+    codex_bin_str = _resolve_codex_bin(codex_bin)
+    env = _codex_env(codex_home)
+    if install_plugin:
+        _install_codex_plugin(codex_bin_str, codex_home)
 
-    get_result = subprocess.run([codex_bin, "mcp", "get", "probe"], capture_output=True)
+    get_result = subprocess.run(
+        [codex_bin_str, "mcp", "get", "probe"],
+        capture_output=True,
+        env=env,
+    )
     if get_result.returncode == 0:
         if not force:
             if not click.confirm("probe is already registered in Codex. Reinstall?", default=False):
-                _configure_codex_auto_review(approve_tools, allow_zeroentropy_network)
+                _configure_codex_auto_review(
+                    approve_tools, allow_zeroentropy_network, codex_home,
+                )
                 if approve_tools or allow_zeroentropy_network:
                     return True
                 console.print("No changes made.")
                 return False
-        subprocess.run([codex_bin, "mcp", "remove", "probe"], capture_output=True)
+        subprocess.run(
+            [codex_bin_str, "mcp", "remove", "probe"],
+            capture_output=True,
+            env=env,
+        )
 
     resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
     probe_command, probe_args = _resolve_probe_command()
-    add_cmd = [codex_bin, "mcp", "add", "probe"]
+    add_cmd = [codex_bin_str, "mcp", "add", "probe"]
     if resolved_key:
         add_cmd.extend(["--env", f"ZEROENTROPY_API_KEY={resolved_key}"])
     add_cmd.extend(["--", probe_command, *probe_args])
 
-    add_result = subprocess.run(add_cmd, capture_output=True)
+    add_result = subprocess.run(add_cmd, capture_output=True, env=env)
     if add_result.returncode != 0:
         console.print(
             f"[red]codex mcp add failed:[/red]\n{add_result.stderr.decode(errors='replace')}"
@@ -678,7 +798,7 @@ def _install_codex(
         "probe will auto-index on first search.\n"
         "  To uninstall: probe uninstall --client codex"
     )
-    _configure_codex_auto_review(approve_tools, allow_zeroentropy_network)
+    _configure_codex_auto_review(approve_tools, allow_zeroentropy_network, codex_home)
     return True
 
 
@@ -704,7 +824,23 @@ def _install_codex(
     is_flag=True,
     help="For Codex: allow api.zeroentropy.dev network access for probe indexing/reranking.",
 )
-def install(client, api_key, no_embed_key, force, approve_tools, allow_zeroentropy_network):
+@click.option("--plugin", is_flag=True, help="Also install the Claude/Codex plugin.")
+@click.option(
+    "--codex-home",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="For Codex: use this CODEX_HOME config directory.",
+)
+@click.option(
+    "--codex-bin",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="For Codex: path to the codex executable.",
+)
+def install(
+    client, api_key, no_embed_key, force, approve_tools, allow_zeroentropy_network,
+    plugin, codex_home, codex_bin,
+):
     """Register probe as a user-scope MCP server in Claude Code or Codex."""
     if client == "claude" and approve_tools:
         raise click.UsageError("--approve-tools requires --client codex or --client both")
@@ -712,9 +848,17 @@ def install(client, api_key, no_embed_key, force, approve_tools, allow_zeroentro
         raise click.UsageError(
             "--allow-zeroentropy-network requires --client codex or --client both"
         )
+    if client in {"claude", "both"} and plugin and no_embed_key:
+        raise click.UsageError("--plugin for Claude Code requires an API key")
 
     if client == "both":
         resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
+        if plugin:
+            claude_bin = shutil.which("claude")
+            if not claude_bin:
+                console.print("[red]Claude Code CLI not found.[/red]")
+                sys.exit(1)
+            _install_claude_plugin(claude_bin, resolved_key)
         _install_claude(resolved_key, no_embed_key, force)
         _install_codex(
             resolved_key,
@@ -722,11 +866,23 @@ def install(client, api_key, no_embed_key, force, approve_tools, allow_zeroentro
             force,
             approve_tools=approve_tools,
             allow_zeroentropy_network=allow_zeroentropy_network,
+            codex_home=codex_home,
+            codex_bin=codex_bin,
+            install_plugin=plugin,
         )
         return
 
     if client in {"claude", "both"}:
-        _install_claude(api_key, no_embed_key, force)
+        if plugin:
+            resolved_key = _resolve_zeroentropy_key(api_key, no_embed_key)
+            claude_bin = shutil.which("claude")
+            if not claude_bin:
+                console.print("[red]Claude Code CLI not found.[/red]")
+                sys.exit(1)
+            _install_claude_plugin(claude_bin, resolved_key)
+            _install_claude(resolved_key, no_embed_key, force)
+        else:
+            _install_claude(api_key, no_embed_key, force)
     if client in {"codex", "both"}:
         _install_codex(
             api_key,
@@ -734,6 +890,9 @@ def install(client, api_key, no_embed_key, force, approve_tools, allow_zeroentro
             force,
             approve_tools=approve_tools,
             allow_zeroentropy_network=allow_zeroentropy_network,
+            codex_home=codex_home,
+            codex_bin=codex_bin,
+            install_plugin=plugin,
         )
 
 

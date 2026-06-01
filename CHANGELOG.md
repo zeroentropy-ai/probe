@@ -2,6 +2,22 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.7 — 2026-06-01
+
+### Added
+- `probe install --plugin` can install the Claude Code or Codex marketplace
+  plugin in addition to direct MCP registration.
+- `probe install --client claude --plugin` passes the ZeroEntropy API key into
+  Claude Code plugin config when installing from a shell.
+- Codex setup commands now accept `--codex-home` and `--codex-bin` for custom
+  Codex config directories and binaries.
+- `probe doctor` and `probe smoke --codex` can validate custom Codex locations
+  with the same `--codex-home` and `--codex-bin` options.
+
+### Changed
+- README now states that `probe install` is direct MCP registration unless
+  `--plugin` is passed.
+
 ## 0.4.6 — 2026-06-01
 
 ### Changed

@@ -55,8 +55,20 @@ CommandRunner = Callable[[list[str]], subprocess.CompletedProcess]
 WhichFunc = Callable[[str], str | None]
 
 
-def _run_command(cmd: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, timeout=5)
+def _run_command(
+    cmd: list[str],
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, timeout=5, env=env)
+
+
+def _runner_with_env(
+    run_command: CommandRunner,
+    env: Mapping[str, str],
+) -> CommandRunner:
+    if run_command is _run_command:
+        return lambda cmd: _run_command(cmd, env=env)
+    return run_command
 
 
 def _status(checks: list[DiagnosticCheck]) -> str:
@@ -79,8 +91,14 @@ def _maybe_strict(check: DiagnosticCheck, strict: bool) -> DiagnosticCheck:
     return check
 
 
-def _check_executable(name: str, which: WhichFunc, optional: bool, fix: str) -> DiagnosticCheck:
-    path = which(name)
+def _check_executable(
+    name: str,
+    which: WhichFunc,
+    optional: bool,
+    fix: str,
+    path_override: str | None = None,
+) -> DiagnosticCheck:
+    path = path_override or which(name)
     if path:
         return DiagnosticCheck(name=name, status=PASS, detail=path, optional=optional)
     status = WARN if optional else FAIL
@@ -210,7 +228,10 @@ def _check_claude_plugin(claude_path: str | None, run_command: CommandRunner) ->
     )
 
 
-def _check_codex_mcp(codex_path: str | None, run_command: CommandRunner) -> DiagnosticCheck:
+def _check_codex_mcp(
+    codex_path: str | None,
+    run_command: CommandRunner,
+) -> DiagnosticCheck:
     if not codex_path:
         return DiagnosticCheck(
             "Codex MCP probe",
@@ -220,7 +241,7 @@ def _check_codex_mcp(codex_path: str | None, run_command: CommandRunner) -> Diag
             optional=True,
         )
     try:
-        result = run_command(["codex", "mcp", "get", "probe"])
+        result = run_command([codex_path, "mcp", "get", "probe"])
     except Exception as e:
         return DiagnosticCheck(
             "Codex MCP probe",
@@ -251,7 +272,7 @@ def _check_codex_plugin(codex_path: str | None, run_command: CommandRunner) -> D
         )
 
     try:
-        result = run_command(["codex", "plugin", "list", "--marketplace", "zeroentropy"])
+        result = run_command([codex_path, "plugin", "list", "--marketplace", "zeroentropy"])
     except Exception as e:
         return DiagnosticCheck(
             "Codex plugin probe@zeroentropy",
@@ -321,14 +342,21 @@ def run_doctor(
     which: WhichFunc = shutil.which,
     run_command: CommandRunner = _run_command,
     env: Mapping[str, str] | None = None,
+    codex_home: Path | None = None,
+    codex_bin: Path | None = None,
 ) -> DoctorReport:
     """Run local diagnostics without printing secrets or modifying config."""
     del no_network  # Reserved for future provider/version reachability checks.
 
     cwd = cwd or Path.cwd()
-    env = env or os.environ
+    if env is None:
+        env = os.environ
+    if codex_home is not None:
+        env = {**env, "CODEX_HOME": str(codex_home.expanduser())}
     claude_path = which("claude")
-    codex_path = which("codex")
+    codex_path = str(codex_bin.expanduser()) if codex_bin is not None else which("codex")
+    codex_cmd = str(codex_bin.expanduser()) if codex_bin is not None else "codex"
+    codex_run_command = _runner_with_env(run_command, env)
     checks = [
         DiagnosticCheck("probe", PASS, f"{probe.__version__} via {sys.executable}"),
         _check_executable("uvx", which, optional=True, fix="Install uv from https://docs.astral.sh/uv/."),
@@ -339,13 +367,14 @@ def run_doctor(
         _check_executable(
             "codex", which, optional=True,
             fix="Install Codex from https://developers.openai.com/codex/.",
+            path_override=codex_path,
         ),
         _check_api_key(env),
         _check_index(cwd),
         _check_claude_plugin(claude_path, run_command),
         _check_claude_mcp(claude_path, run_command),
-        _check_codex_plugin(codex_path, run_command),
-        _check_codex_mcp(codex_path, run_command),
+        _check_codex_plugin(codex_cmd if codex_path else None, codex_run_command),
+        _check_codex_mcp(codex_cmd if codex_path else None, codex_run_command),
         _check_codex_probe_auto_review(codex_path, env),
     ]
     checks = [_maybe_strict(check, strict) for check in checks]

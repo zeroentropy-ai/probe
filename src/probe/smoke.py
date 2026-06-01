@@ -177,6 +177,8 @@ def run_smoke(
     keep: bool = False,
     claude: bool = False,
     codex: bool = False,
+    codex_home: Path | None = None,
+    codex_bin: Path | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     rerank_provider: RerankProvider | None = None,
 ) -> SmokeReport:
@@ -209,7 +211,7 @@ def run_smoke(
                 codex_ready=False if codex else None,
                 error="Claude Code CLI not found.",
             )
-        if codex and shutil.which("codex") is None:
+        if codex and codex_bin is None and shutil.which("codex") is None:
             return SmokeReport(
                 status="FAIL",
                 project_path=str(project_path),
@@ -249,7 +251,11 @@ def run_smoke(
         if codex:
             from probe.diagnostics import PASS, run_doctor
 
-            doctor = run_doctor(cwd=project_path)
+            doctor = run_doctor(
+                cwd=project_path,
+                codex_home=codex_home,
+                codex_bin=codex_bin,
+            )
             codex_ready = any(
                 check.name in {"Codex MCP probe", "Codex plugin probe@zeroentropy"}
                 and check.status == PASS

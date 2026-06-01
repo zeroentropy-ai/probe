@@ -63,16 +63,23 @@ slash command treats `--sparse` as part of the URL, so do not pass sparse
 checkout options there.
 
 Claude Code asks for your ZeroEntropy API key during plugin install. The plugin
-starts probe with `uvx --from probe-search==0.4.6 probe mcp`, so Claude Code
+starts probe with `uvx --from probe-search==0.4.7 probe mcp`, so Claude Code
 does not need a separate probe install.
 
 If you use the `claude plugin install` shell command instead of the `/plugin`
-slash command, export `ZEROENTROPY_API_KEY` before starting Claude Code. From a
-shell, sparse checkout options are supported:
+slash command, pass the plugin config explicitly. From a shell, sparse checkout
+options are supported:
 
 ```bash
 claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .claude-plugin plugins
-claude plugin install probe@zeroentropy
+claude plugin install --config zeroentropy_api_key="$ZEROENTROPY_API_KEY" probe@zeroentropy
+```
+
+You can also ask probe to install and configure the plugin from a shell:
+
+```bash
+uv tool install probe-search
+probe install --client claude --plugin --api-key "$ZEROENTROPY_API_KEY"
 ```
 
 ### Codex plugin
@@ -86,7 +93,7 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.6 probe mcp`.
+The Codex plugin starts probe with `uvx --from probe-search==0.4.7 probe mcp`.
 Keep `ZEROENTROPY_API_KEY` in your shell environment before starting Codex, or
 run the direct installer below to persist the key in Codex's MCP config.
 
@@ -102,7 +109,18 @@ This writes a narrow Codex config allowlist for ZeroEntropy API access and
 package downloads, then pre-approves the probe MCP tools so auto-review does
 not block each search.
 
+You can also ask probe to install the Codex plugin and direct MCP entry from a
+shell:
+
+```bash
+uv tool install probe-search
+probe install --client codex --plugin --api-key "$ZEROENTROPY_API_KEY" --approve-tools --allow-zeroentropy-network
+```
+
 ### Direct CLI/MCP setup
+
+`probe install` registers probe directly as an MCP server. It does not install
+the Claude Code or Codex plugin unless you pass `--plugin`.
 
 ```bash
 uv tool install probe-search
@@ -118,6 +136,13 @@ codex mcp list
 Use `uv tool install` or `pipx` so the registered `probe` path stays valid. If
 you install probe in a temporary virtual environment, rerun `probe install`
 after recreating that environment.
+
+For custom Codex setups, pass the Codex config directory and binary explicitly:
+
+```bash
+probe install --client codex --codex-home ~/.codex-work --codex-bin /path/to/codex
+probe doctor --codex-home ~/.codex-work --codex-bin /path/to/codex
+```
 
 For CLI-only use:
 
@@ -257,7 +282,9 @@ probe smoke --json
 | `probe index --full` | Force full re-index |
 | `probe install --client claude` | Register probe as a user-scope MCP server in Claude Code |
 | `probe install --client codex` | Register probe as an MCP server in Codex |
+| `probe install --client codex --plugin` | Install the Codex plugin and register direct MCP |
 | `probe install --client codex --approve-tools --allow-zeroentropy-network` | Configure Codex auto-review to allow probe tool calls and ZeroEntropy egress |
+| `probe install --client codex --codex-home PATH --codex-bin PATH` | Install against a custom Codex config directory or binary |
 | `probe install --client both` | Register probe in Claude Code and Codex |
 | `probe search "query"` | Search project knowledge with natural language |
 | `probe search --top-k N` | Limit number of results |
@@ -272,10 +299,12 @@ probe smoke --json
 | `probe init` | Create local config from environment |
 | `probe doctor` | Diagnose API key, Claude Code, Codex, MCP, and index setup |
 | `probe doctor --json` | Emit machine-readable diagnostics |
+| `probe doctor --codex-home PATH --codex-bin PATH` | Diagnose a custom Codex config directory or binary |
 | `probe smoke` | Run an end-to-end indexing and search validation |
 | `probe smoke --current` | Smoke-test the current project |
 | `probe smoke --claude` | Smoke-test search and Claude wiring |
 | `probe smoke --codex` | Smoke-test search and Codex wiring |
+| `probe smoke --codex --codex-home PATH --codex-bin PATH` | Smoke-test custom Codex wiring |
 | `probe mcp` | Start MCP server |
 | `probe uninstall --client claude` | Unregister probe from Claude Code |
 | `probe uninstall --client codex` | Unregister probe from Codex |

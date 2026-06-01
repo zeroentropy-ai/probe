@@ -1,6 +1,6 @@
 {
   "name": "probe",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Use probe to search indexed project knowledge from docs and code through MCP.",
   "author": {
     "name": "ZeroEntropy",

@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from probe.diagnostics import PASS, DiagnosticCheck, DoctorReport
 from probe.smoke import run_smoke
 
 
@@ -68,3 +69,37 @@ def test_smoke_codex_fails_when_codex_cli_missing(tmp_path, monkeypatch):
 
     assert report.status == "FAIL"
     assert "Codex CLI not found" in report.error
+
+
+def test_smoke_codex_accepts_custom_home_and_bin(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    custom_codex = tmp_path / "bin" / "codex-custom"
+    custom_home = tmp_path / "codex-home"
+    seen = {}
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    def fake_run_doctor(**kwargs):
+        seen.update(kwargs)
+        return DoctorReport(
+            status=PASS,
+            version="test",
+            cwd=str(tmp_path),
+            checks=[
+                DiagnosticCheck("Codex MCP probe", PASS, "registered"),
+                DiagnosticCheck("Codex plugin probe@zeroentropy", PASS, "available"),
+            ],
+        )
+
+    monkeypatch.setattr("probe.diagnostics.run_doctor", fake_run_doctor)
+
+    report = run_smoke(
+        codex=True,
+        codex_home=custom_home,
+        codex_bin=custom_codex,
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+
+    assert report.status == "PASS"
+    assert report.codex_ready is True
+    assert seen["codex_home"] == custom_home
+    assert seen["codex_bin"] == custom_codex

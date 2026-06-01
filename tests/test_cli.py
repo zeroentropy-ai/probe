@@ -299,6 +299,136 @@ class TestCLI:
             assert plugin["tools"][tool]["approval_mode"] == "approve"
         assert "Codex auto-review can use probe" in result.output
 
+    def test_install_codex_accepts_custom_home_and_bin(
+        self, runner, monkeypatch, tmp_path,
+    ):
+        codex_home = tmp_path / "custom-codex"
+        custom_codex = tmp_path / "bin" / "codex-custom"
+        custom_codex.parent.mkdir()
+        custom_codex.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/probe" if name == "probe" else None,
+        )
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == [str(custom_codex), "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append((cmd, kw.get("env")))
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(
+            main,
+            [
+                "install",
+                "--client", "codex",
+                "--codex-bin", str(custom_codex),
+                "--codex-home", str(codex_home),
+                "--api-key", "ze-test",
+                "--approve-tools",
+                "--allow-zeroentropy-network",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        add_cmd, add_env = next(
+            call for call in seen if call[0][:3] == [str(custom_codex), "mcp", "add"]
+        )
+        assert add_cmd[0] == str(custom_codex)
+        assert add_env["CODEX_HOME"] == str(codex_home)
+        assert (codex_home / "config.toml").exists()
+        config = tomllib.loads((codex_home / "config.toml").read_text())
+        assert config["mcp_servers"]["probe"]["default_tools_approval_mode"] == "approve"
+
+    def test_install_codex_plugin_installs_marketplace_plugin(
+        self, runner, monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("codex", "probe") else None,
+        )
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/codex", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd)
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(
+            main,
+            ["install", "--client", "codex", "--plugin", "--api-key", "ze-test"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert [
+            "/fake/codex", "plugin", "marketplace", "add",
+            "https://github.com/zeroentropy-ai/probe.git",
+            "--sparse", ".agents/plugins",
+            "--sparse", "plugins/probe-codex",
+        ] in seen
+        assert ["/fake/codex", "plugin", "add", "probe@zeroentropy"] in seen
+
+    def test_install_claude_plugin_installs_marketplace_plugin(
+        self, runner, monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/fake/" + name if name in ("claude", "probe") else None,
+        )
+        seen = []
+
+        def fake_run(cmd, *a, **kw):
+            class R:
+                pass
+            r = R()
+            r.returncode = 1 if cmd[:3] == ["/fake/claude", "mcp", "get"] else 0
+            r.stdout = b""
+            r.stderr = b""
+            seen.append(cmd)
+            return r
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(
+            main,
+            ["install", "--client", "claude", "--plugin", "--api-key", "ze-test"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert [
+            "/fake/claude", "plugin", "marketplace", "add",
+            "https://github.com/zeroentropy-ai/probe.git",
+            "--sparse", ".claude-plugin", "plugins",
+        ] in seen
+        assert [
+            "/fake/claude", "plugin", "install",
+            "--config", "zeroentropy_api_key=ze-test",
+            "probe@zeroentropy",
+        ] in seen
+
+    def test_install_claude_plugin_requires_api_key(self, runner):
+        result = runner.invoke(
+            main,
+            ["install", "--client", "claude", "--plugin", "--no-embed-key"],
+        )
+
+        assert result.exit_code != 0
+        assert "--plugin for Claude Code requires an API key" in result.output
+
     def test_codex_review_flags_require_codex_client(self, runner):
         result = runner.invoke(main, ["install", "--client", "claude", "--approve-tools"])
 
