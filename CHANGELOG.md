@@ -2,7 +2,7 @@
 
 All notable changes to probe are documented here.
 
-## Unreleased
+## 0.4.6 — 2026-06-01
 
 ### Changed
 - Indexing now discovers all text-like files and PDFs instead of using a fixed
