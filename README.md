@@ -36,7 +36,7 @@ What you get:
 
 - Claude Code and Codex plugins with bundled MCP server and usage skill
 - Manual Claude Code and Codex setup with `probe install`
-- First-use indexing and incremental refresh-before-search
+- MCP first-use indexing and incremental refresh-before-search
 - Hybrid keyword + semantic retrieval across docs, code, text, and PDFs
 - Cross-encoder reranking with ZeroEntropy `zerank-2`
 - Local index storage in `.probe/`
@@ -98,8 +98,9 @@ uv tool install probe-search
 probe install --client codex --approve-tools --allow-zeroentropy-network
 ```
 
-This writes a narrow Codex config allowlist for `api.zeroentropy.dev` and
-pre-approves the probe MCP tools, so auto-review does not block each search.
+This writes a narrow Codex config allowlist for ZeroEntropy API access and
+package downloads, then pre-approves the probe MCP tools so auto-review does
+not block each search.
 
 ### Direct CLI/MCP setup
 
@@ -193,9 +194,10 @@ Java.
 File discovery respects root `.gitignore` and `.probeignore` files. It also
 skips `.git/`, `.probe/`, `__pycache__/`, `.venv/`, and `*.pyc`.
 
-On first search, probe creates the local `.probe/` index automatically. Before
-later CLI or MCP searches, it checks for added, changed, and deleted files, then
-refreshes only affected chunks. Set `PROBE_REFRESH_TTL=0` to check before every
+In MCP mode, the first `probe_search` creates the local `.probe/` index
+automatically. For CLI-only use, run `probe index .` once. After `.probe/`
+exists, CLI and MCP searches check for added, changed, and deleted files, then
+refresh only affected chunks. Set `PROBE_REFRESH_TTL=0` to check before every
 search, or `PROBE_REFRESH_TTL=-1` to disable automatic refresh.
 
 Chunks keep Markdown header paths, code symbol names, PDF page numbers, and
@@ -299,9 +301,10 @@ providers:
 
 ## Data Handling
 
-Documents are chunked and stored locally in `.probe/` with SQLite and numpy.
-Only chunk text is sent to the embedding and reranking API for processing.
-Documents are never uploaded or stored on an external server.
+Project files are chunked and stored locally in `.probe/` with SQLite and
+numpy. During indexing and search, probe sends query text and chunk text to
+ZeroEntropy for embedding and reranking. It does not create a remote document
+index; `.probe/` is the durable project index.
 
 ---
 
