@@ -88,6 +88,18 @@ class TestDiscoverFiles:
         paths = {str(f.relative_to(tmp_path)) for f in files}
         assert "local/notes.local" not in paths
 
+    def test_skips_likely_secret_files_by_default(self, tmp_path: Path):
+        (tmp_path / ".env.local.bak").write_text("DATABASE_URL=postgres://secret\n")
+        (tmp_path / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\nsecret\n")
+        (tmp_path / "notes.md").write_text("# Safe\n")
+
+        files = discover_files([tmp_path])
+
+        names = {f.name for f in files}
+        assert "notes.md" in names
+        assert ".env.local.bak" not in names
+        assert "private.pem" not in names
+
 
 class TestFileHash:
     def test_deterministic_hash(self, tmp_path: Path):

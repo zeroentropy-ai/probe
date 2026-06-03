@@ -152,7 +152,10 @@ def index(paths, full):
     pipeline = IndexPipeline(db=db, vector_store=vector_store, embedding_provider=embedding)
 
     console.print(f"[bold]Indexing {len(paths)} path(s)...[/bold]")
-    stats = pipeline.index([Path(p) for p in paths], full=full)
+    try:
+        stats = pipeline.index([Path(p) for p in paths], full=full)
+    except Exception as exc:
+        raise click.ClickException(f"Indexing failed: {exc}") from exc
 
     console.print(
         f"\n[green]Done![/green] "

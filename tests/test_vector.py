@@ -38,6 +38,16 @@ class TestVectorStore:
         results = store.search(np.array([1,0,0,0], dtype=np.float32), top_k=1)
         assert len(results) == 0
 
+    def test_save_after_clear_removes_vector_files(self, store: VectorStore):
+        store.add(chunk_ids=[1], vectors=np.array([[1,0,0,0]], dtype=np.float32))
+        store.save()
+
+        store.clear()
+        store.save()
+
+        assert not store.path.exists()
+        assert not store.path.with_suffix(".ids.npy").exists()
+
     def test_empty_search_returns_empty(self, store: VectorStore):
         results = store.search(np.array([1,0,0,0], dtype=np.float32), top_k=5)
         assert results == []

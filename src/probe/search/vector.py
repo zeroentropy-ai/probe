@@ -40,10 +40,13 @@ class VectorStore:
         return [(self._ids[i], float(scores[i])) for i in top_indices]
 
     def save(self) -> None:
-        if self._vectors is not None:
-            np.save(str(self.path), self._vectors)
-            ids_path = self.path.with_suffix(".ids.npy")
-            np.save(str(ids_path), np.array(self._ids, dtype=np.int64))
+        ids_path = self.path.with_suffix(".ids.npy")
+        if self._vectors is None:
+            self.path.unlink(missing_ok=True)
+            ids_path.unlink(missing_ok=True)
+            return
+        np.save(str(self.path), self._vectors)
+        np.save(str(ids_path), np.array(self._ids, dtype=np.int64))
 
     def load(self) -> None:
         if self.path.exists():

@@ -2,6 +2,24 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.9 — 2026-06-02
+
+### Fixed
+- Indexing now caps embedding requests by UTF-8 payload bytes as well as chunk
+  count, preventing oversized provider requests on large repositories.
+- Files are no longer marked indexed until their embeddings have been accepted
+  and vectors are stored, so a failed run can recover on the next index.
+- Embedding failures are handled per file: probe reports the failed file and
+  continues indexing the rest of the repo.
+- Large single-paragraph text and PDF pages are split into bounded chunks.
+- Likely secret files such as `.env*`, `*.pem`, `*.key`, `.npmrc`, and private
+  SSH keys are skipped by default.
+
+### Added
+- `PROBE_MAX_CHUNK_CHARS`, `PROBE_EMBED_BATCH_MAX_CHUNKS`,
+  `PROBE_EMBED_BATCH_MAX_BYTES`, and `PROBE_INDEX_SECRET_FILES` environment
+  controls.
+
 ## 0.4.8 — 2026-06-01
 
 ### Changed

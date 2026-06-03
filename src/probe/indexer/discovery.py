@@ -13,6 +13,23 @@ from pathspec import GitIgnoreSpec
 TEXT_SAMPLE_BYTES = 8192
 ALWAYS_IGNORE_DIRS = {".git", ".probe", "__pycache__", ".venv"}
 ALWAYS_IGNORE_FILE_PATTERNS = {"*.pyc", "*.pyo"}
+DEFAULT_SECRET_FILE_PATTERNS = {
+    ".env",
+    ".env.*",
+    "*.env",
+    "*.env.*",
+    "*.key",
+    "*.pem",
+    "*.p12",
+    "*.pfx",
+    ".netrc",
+    ".npmrc",
+    ".pypirc",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
+}
 PDF_EXTENSIONS = {".pdf"}
 OBVIOUS_BINARY_EXTENSIONS = {
     ".7z", ".a", ".avi", ".bmp", ".bz2", ".class", ".db", ".dll", ".dmg",
@@ -48,6 +65,8 @@ class _IgnoreMatcher:
         if not is_dir and any(
             fnmatch.fnmatch(path.name, pattern) for pattern in ALWAYS_IGNORE_FILE_PATTERNS
         ):
+            return True
+        if not is_dir and _is_sensitive_path(path):
             return True
 
         decision = self._category_decision(self.gitignore_specs, path, is_dir=is_dir)
@@ -107,11 +126,24 @@ def _looks_indexable(path: Path) -> bool:
     return b"\x00" not in sample
 
 
+def _index_sensitive_files() -> bool:
+    return os.environ.get("PROBE_INDEX_SECRET_FILES", "").lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _is_sensitive_path(path: Path) -> bool:
+    if _index_sensitive_files():
+        return False
+    name = path.name.lower()
+    return any(fnmatch.fnmatch(name, pattern) for pattern in DEFAULT_SECRET_FILE_PATTERNS)
+
+
 def discover_files(paths: list[Path]) -> list[Path]:
     result: list[Path] = []
     for path in paths:
         if path.is_file():
-            if _looks_indexable(path):
+            if not _is_sensitive_path(path) and _looks_indexable(path):
                 result.append(path)
             continue
 

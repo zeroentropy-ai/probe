@@ -90,14 +90,15 @@ class ProbeDB:
         self.conn.execute("PRAGMA foreign_keys=ON")
 
     def add_file(self, path: str, hash: str, file_type: str,
-                 mtime_ns: int = 0, size: int = 0) -> int:
+                 mtime_ns: int = 0, size: int = 0, commit: bool = True) -> int:
         now = datetime.now(timezone.utc).isoformat()
         cursor = self.conn.execute(
             """INSERT INTO files (path, hash, file_type, indexed_at, mtime_ns, size)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (path, hash, file_type, now, mtime_ns, size),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return cursor.lastrowid
 
     def get_file_hash(self, path: str) -> str | None:
@@ -112,9 +113,10 @@ class ProbeDB:
         ).fetchall()
         return [row[0] for row in rows]
 
-    def delete_file(self, path: str) -> None:
+    def delete_file(self, path: str, commit: bool = True) -> None:
         self.conn.execute("DELETE FROM files WHERE path = ?", (path,))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def list_files(self) -> list[dict]:
         rows = self.conn.execute("SELECT path, hash, file_type, indexed_at FROM files").fetchall()

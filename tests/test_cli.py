@@ -35,6 +35,24 @@ class TestCLI:
         result = runner.invoke(main, ["index", "--help"])
         assert result.exit_code == 0
 
+    def test_index_command_reports_failures_without_traceback(
+        self, runner, monkeypatch, tmp_path,
+    ):
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "test")
+        (tmp_path / "README.md").write_text("# Readme\n")
+
+        with patch("probe.cli._build_providers", return_value=(MagicMock(), None)), \
+             patch("probe.indexer.pipeline.IndexPipeline.index",
+                   side_effect=RuntimeError("request exceeds 5 MB")):
+            result = runner.invoke(main, ["index", "README.md"])
+
+        assert result.exit_code != 0
+        assert "Error: Indexing failed: request exceeds 5 MB" in result.output
+        assert "Traceback" not in result.output
+
     def test_search_command_exists(self, runner):
         result = runner.invoke(main, ["search", "--help"])
         assert result.exit_code == 0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 
@@ -10,6 +11,34 @@ import tiktoken
 from probe.models import Chunk
 
 _enc = tiktoken.get_encoding("cl100k_base")
+DEFAULT_MAX_CHUNK_CHARS = 2000
+DEFAULT_CHUNK_OVERLAP_CHARS = 200
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _max_chunk_chars() -> int:
+    return _env_int("PROBE_MAX_CHUNK_CHARS", DEFAULT_MAX_CHUNK_CHARS)
+
+
+def _window_size() -> int:
+    max_chars = _max_chunk_chars()
+    return max(1, max_chars - DEFAULT_CHUNK_OVERLAP_CHARS)
+
+
+def _append_chunks(target: list[Chunk], chunks: list[Chunk]) -> None:
+    for chunk in chunks:
+        chunk.chunk_index = len(target)
+        target.append(chunk)
 
 
 def _count_tokens(text: str) -> int:
@@ -48,7 +77,16 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
     if not matches:
         text = content.strip()
         if text:
-            return [_make_chunk(text, file_path, "markdown", 0, 0, source_text=content)]
+            char_start = content.find(text)
+            if len(text) > _max_chunk_chars():
+                return _sliding_window(
+                    text, file_path, "markdown",
+                    source_text=content, base_offset=max(0, char_start),
+                )
+            return [_make_chunk(
+                text, file_path, "markdown", 0, max(0, char_start),
+                source_text=content,
+            )]
         return []
 
     chunks: list[Chunk] = []
@@ -75,22 +113,49 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
         if not section:
             continue
 
-        if len(section) > 2000:
+        if len(section) > _max_chunk_chars():
             paragraphs = re.split(r"\n\n+", section)
             current = ""
+            current_start = start
+            search_from = start
             for para in paragraphs:
-                if current and len(current) + len(para) > 1800:
+                para_start = content.find(para, search_from)
+                if para_start == -1:
+                    para_start = search_from
+                search_from = para_start + len(para)
+
+                if len(para) > _max_chunk_chars():
+                    if current.strip():
+                        chunks.append(_make_chunk(
+                            current.strip(), file_path, "markdown",
+                            len(chunks), current_start, source_text=content,
+                            header_path=header_path,
+                        ))
+                        current = ""
+                    _append_chunks(
+                        chunks,
+                        _sliding_window(
+                            para, file_path, "markdown",
+                            source_text=content, base_offset=para_start,
+                            header_path=header_path,
+                        ),
+                    )
+                elif current and len(current) + len(para) > _window_size():
                     chunks.append(_make_chunk(
                         current.strip(), file_path, "markdown",
-                        len(chunks), start, source_text=content, header_path=header_path,
+                        len(chunks), current_start, source_text=content,
+                        header_path=header_path,
                     ))
                     current = para
+                    current_start = para_start
                 else:
                     current = f"{current}\n\n{para}" if current else para
+                    if current == para:
+                        current_start = para_start
             if current.strip():
                 chunks.append(_make_chunk(
                     current.strip(), file_path, "markdown",
-                    len(chunks), start, source_text=content, header_path=header_path,
+                    len(chunks), current_start, source_text=content, header_path=header_path,
                 ))
         else:
             chunks.append(_make_chunk(
@@ -117,8 +182,20 @@ def chunk_code(content: str, file_path: str) -> list[Chunk]:
 
     pre = content[: matches[0].start()].strip()
     if pre and len(pre) > 20:
-        chunks.append(_make_chunk(pre, file_path, "code", len(chunks), 0,
-                                  source_text=content))
+        pre_start = content.find(pre)
+        if len(pre) > _max_chunk_chars():
+            _append_chunks(
+                chunks,
+                _sliding_window(
+                    pre, file_path, "code", source_text=content,
+                    base_offset=max(0, pre_start),
+                ),
+            )
+        else:
+            chunks.append(_make_chunk(
+                pre, file_path, "code", len(chunks), max(0, pre_start),
+                source_text=content,
+            ))
 
     for i, match in enumerate(matches):
         start = match.start()
@@ -134,7 +211,7 @@ def chunk_code(content: str, file_path: str) -> list[Chunk]:
         )
         symbol_name = symbol_match.group(1) if symbol_match else None
 
-        if len(section) > 2000:
+        if len(section) > _max_chunk_chars():
             sub_chunks = _sliding_window(
                 section, file_path, "code", symbol_name=symbol_name,
                 source_text=content, base_offset=start,
@@ -158,10 +235,20 @@ def chunk_pdf(content: str, file_path: str) -> list[Chunk]:
     for i, page in enumerate(pages):
         text = page.strip()
         if text:
-            chunks.append(_make_chunk(
-                text, file_path, "pdf", len(chunks),
-                char_offset, source_text=content, page_number=i + 1,
-            ))
+            page_start = char_offset + page.find(text)
+            if len(text) > _max_chunk_chars():
+                _append_chunks(
+                    chunks,
+                    _sliding_window(
+                        text, file_path, "pdf", source_text=content,
+                        base_offset=page_start, page_number=i + 1,
+                    ),
+                )
+            else:
+                chunks.append(_make_chunk(
+                    text, file_path, "pdf", len(chunks),
+                    page_start, source_text=content, page_number=i + 1,
+                ))
         char_offset += len(page) + len("--- PAGE BREAK ---")
     return chunks
 
@@ -170,28 +257,55 @@ def chunk_text(content: str, file_path: str) -> list[Chunk]:
     paragraphs = re.split(r"\n\n+", content)
     chunks: list[Chunk] = []
     current = ""
-    char_offset = 0
+    current_start = 0
+    search_from = 0
 
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-        if current and len(current) + len(para) > 1500:
-            chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset,
+        para_start = content.find(para, search_from)
+        if para_start == -1:
+            para_start = search_from
+        search_from = para_start + len(para)
+
+        if len(para) > _max_chunk_chars():
+            if current.strip():
+                chunks.append(_make_chunk(
+                    current, file_path, "text", len(chunks), current_start,
+                    source_text=content,
+                ))
+                current = ""
+            _append_chunks(
+                chunks,
+                _sliding_window(
+                    para, file_path, "text",
+                    source_text=content, base_offset=para_start,
+                ),
+            )
+        elif current and len(current) + len(para) > _window_size():
+            chunks.append(_make_chunk(current, file_path, "text", len(chunks), current_start,
                                       source_text=content))
-            char_offset += len(current)
             current = para
+            current_start = para_start
         else:
             current = f"{current}\n\n{para}" if current else para
+            if current == para:
+                current_start = para_start
 
     if current.strip():
-        chunks.append(_make_chunk(current, file_path, "text", len(chunks), char_offset,
+        chunks.append(_make_chunk(current, file_path, "text", len(chunks), current_start,
                                   source_text=content))
     return chunks
 
 
-def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200,
-                    symbol_name=None, source_text=None, base_offset=0):
+def _sliding_window(content, file_path, file_type, window_size=None, overlap=None,
+                    symbol_name=None, source_text=None, base_offset=0,
+                    header_path=None, page_number=None):
+    if window_size is None:
+        window_size = _window_size()
+    if overlap is None:
+        overlap = min(DEFAULT_CHUNK_OVERLAP_CHARS, max(0, window_size - 1))
     chunks: list[Chunk] = []
     start = 0
     while start < len(content):
@@ -201,7 +315,8 @@ def _sliding_window(content, file_path, file_type, window_size=1500, overlap=200
             chunks.append(_make_chunk(
                 text, file_path, file_type, len(chunks),
                 base_offset + start, source_text=source_text or content,
-                symbol_name=symbol_name,
+                header_path=header_path, symbol_name=symbol_name,
+                page_number=page_number,
             ))
         if end >= len(content):
             break

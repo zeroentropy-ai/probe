@@ -36,7 +36,7 @@ Run this inside Claude Code:
 ```
 
 Claude Code asks for your ZeroEntropy API key during install. The plugin starts
-probe with `uvx --from probe-search==0.4.8 probe mcp`, so you do not need to
+probe with `uvx --from probe-search==0.4.9 probe mcp`, so you do not need to
 install probe separately.
 
 Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
@@ -54,7 +54,7 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.8 probe mcp`.
+The Codex plugin starts probe with `uvx --from probe-search==0.4.9 probe mcp`.
 Keep `ZEROENTROPY_API_KEY` in your shell before starting Codex, or use the
 direct installer below to persist the key in Codex's MCP config.
 
@@ -162,12 +162,18 @@ than `.gitignore`, which lets you keep files out of Git while still letting
 probe index them. Use `.probeignore` for probe-specific exclusions.
 
 probe always skips `.git/`, `.probe/`, `__pycache__/`, `.venv/`, compiled
-Python files, and obvious binary artifacts.
+Python files, obvious binary artifacts, and likely secret files such as
+`.env*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, and private SSH keys. Set
+`PROBE_INDEX_SECRET_FILES=1` only if you explicitly want those files indexed.
 
 In MCP mode, the first `probe_search` builds the local `.probe/` index. After
 that, CLI and MCP searches refresh added, changed, and deleted files before
 search. Set `PROBE_REFRESH_TTL=0` to check before every search, or
 `PROBE_REFRESH_TTL=-1` to disable automatic refresh.
+
+If a file cannot be extracted or embedded, probe skips that file, reports it,
+and continues indexing the rest of the repo. Existing chunks for that file stay
+in place until the replacement chunks have been embedded successfully.
 
 ## How Search Works
 
@@ -238,12 +244,24 @@ providers:
     model: zerank-2
 ```
 
+Useful environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PROBE_REFRESH_TTL` | `2` | Seconds between refresh checks before search; `0` means every search, `-1` disables refresh |
+| `PROBE_MAX_CHUNK_CHARS` | `2000` | Maximum characters per indexed chunk before splitting |
+| `PROBE_EMBED_BATCH_MAX_CHUNKS` | `96` | Maximum chunks per embedding request |
+| `PROBE_EMBED_BATCH_MAX_BYTES` | `4500000` | Maximum UTF-8 payload bytes per embedding request |
+| `PROBE_INDEX_SECRET_FILES` | unset | Set to `1` to opt into indexing likely secret files |
+
 ## Data Handling
 
 Project chunks and vectors are stored locally in `.probe/` with SQLite and
 numpy. During indexing and search, probe sends query text and chunk text to
 ZeroEntropy for embedding and reranking. It does not create a remote document
-index; `.probe/` is the durable project index.
+index; `.probe/` is the durable project index. Likely secret files are skipped
+by default, but review `.probeignore` before indexing repositories with unusual
+credential locations.
 
 ## Links
 

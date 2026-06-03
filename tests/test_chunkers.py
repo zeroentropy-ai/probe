@@ -26,6 +26,12 @@ class TestMarkdownChunker:
         for chunk in chunks:
             assert len(chunk.content.strip()) > 0
 
+    def test_large_headerless_markdown_is_split(self):
+        chunks = chunk_markdown("m" * 6000, "docs/large.md")
+
+        assert len(chunks) > 1
+        assert all(len(chunk.content) <= 2000 for chunk in chunks)
+
 
 class TestCodeChunker:
     def test_splits_on_functions_and_classes(self, sample_code: str):
@@ -58,6 +64,14 @@ class TestCodeChunker:
         assert oauth_chunk.line_start == 3
         assert oauth_chunk.line_end == 5
 
+    def test_large_preamble_before_symbol_is_split(self):
+        content = ("// generated schema\n" * 300) + "\nfunction hydrate() {\n  return true\n}\n"
+
+        chunks = chunk_code(content, "generated.ts")
+
+        assert len(chunks) > 1
+        assert all(len(chunk.content) <= 2000 for chunk in chunks)
+
 
 class TestTextChunker:
     def test_splits_on_paragraphs(self, sample_text: str):
@@ -75,6 +89,12 @@ class TestTextChunker:
         assert len(chunks) == 1
         assert chunks[0].token_count > 0
 
+    def test_large_single_paragraph_is_split(self):
+        chunks = chunk_text("x" * 6000, "large.json")
+
+        assert len(chunks) > 1
+        assert all(len(chunk.content) <= 2000 for chunk in chunks)
+
 
 class TestPDFChunker:
     def test_splits_on_page_breaks(self):
@@ -83,6 +103,12 @@ class TestPDFChunker:
         assert len(chunks) == 2
         assert chunks[0].page_number == 1
         assert chunks[1].page_number == 2
+
+    def test_large_pdf_page_is_split(self):
+        chunks = chunk_pdf("p" * 6000, "large.pdf")
+
+        assert len(chunks) > 1
+        assert all(len(chunk.content) <= 2000 for chunk in chunks)
 
 
 class TestChunkContent:
