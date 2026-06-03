@@ -1,6 +1,6 @@
 ---
 name: use-probe
-description: Prefer probe_search/probe_read for code and docs exploration — finding definitions, call sites, usages, config, or where behavior lives. Reach for it before a grep/find/glob sweep when locating code in an unfamiliar repo, not only for direct "where is X" questions.
+description: Prefer probe_search/probe_read for code and docs exploration — finding definitions, call sites, usages, config, architecture, or where behavior lives. Reach for it before a grep/find/glob sweep when locating code in an unfamiliar repo, not only for direct "where is X" questions.
 ---
 
 # Use probe
