@@ -88,6 +88,11 @@ claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git --spar
 claude plugin install --config zeroentropy_api_key="$ZEROENTROPY_API_KEY" probe@zeroentropy
 ```
 
+If Claude says `--config not applied`, open Claude Code and run
+`/plugin configure probe@zeroentropy`, or use `probe install --client claude
+--plugin --api-key "$ZEROENTROPY_API_KEY"` so the direct MCP entry also has the
+key.
+
 ## CLI and MCP
 
 For CLI-only use:
