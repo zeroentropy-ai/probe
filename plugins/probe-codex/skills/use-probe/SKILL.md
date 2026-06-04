@@ -1,14 +1,18 @@
 ---
 name: use-probe
-description: Use probe_search and probe_read to search indexed project docs and code before broad grep/read sweeps. Use for repository architecture, implementation details, APIs, setup flows, design docs, runbooks, or questions about where behavior is defined.
+description: Prefer probe_search/probe_read for code and docs exploration — finding definitions, call sites, usages, config, architecture, or where behavior lives. Reach for it before a grep/find/glob sweep when locating code in an unfamiliar repo, not only for direct "where is X" questions.
 ---
 
 # Use probe
 
-Use probe as the first pass when the user asks about project knowledge that may span files, docs, or code.
+Use probe as your default first step for code and documentation discovery. Prefer it over
+grep/find/glob when you need to locate something in an unfamiliar repo; switch to raw file
+tools once probe has pointed you to the right place.
 
-1. Start with `probe_search` before broad `grep`, `find`, or reading many files.
-2. Ask focused natural-language queries. Prefer one or two targeted searches over a vague sweep.
+1. Start with `probe_search` before a broad `grep`/`find`/`glob` or reading several files —
+   to locate definitions, call sites, usages, config, and where behavior lives.
+2. Ask focused natural-language queries; run a few targeted searches as the task evolves
+   rather than one vague sweep.
 3. Check the `refreshed` field in `probe_search`. If it contains an error, say the search used the last good local index.
 4. Prefer focused `probe_read(file_path, line_start, line_end, context_lines=...)` calls
    when search returns line ranges and you need more context.
@@ -16,4 +20,5 @@ Use probe as the first pass when the user asks about project knowledge that may 
 6. Use normal file tools after probe narrows the search, especially for exact line checks or edits.
 7. Run `probe_index` only when the user asks, search is empty, or freshness looks wrong.
 
-Do not use probe for a file the user already named unless repo context or related docs would help.
+Don't force probe for a file you've already been pointed to, but lean on it whenever you're
+searching for code you haven't located yet.
