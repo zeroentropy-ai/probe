@@ -1,6 +1,6 @@
 [project]
 name = "probe-search"
-version = "0.4.9"
+version = "0.4.10"
 description = "AI Agent Context Engine — give your coding agent a brain beyond code"
 readme = "README.md"
 requires-python = ">=3.10"

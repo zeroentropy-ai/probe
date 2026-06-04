@@ -36,7 +36,7 @@ Run this inside Claude Code:
 ```
 
 Claude Code asks for your ZeroEntropy API key during install. The plugin starts
-probe with `uvx --from probe-search==0.4.9 probe mcp`, so you do not need to
+probe with `uvx --from probe-search==0.4.10 probe mcp`, so you do not need to
 install probe separately.
 
 Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
@@ -54,7 +54,7 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.9 probe mcp`.
+The Codex plugin starts probe with `uvx --from probe-search==0.4.10 probe mcp`.
 Keep `ZEROENTROPY_API_KEY` in your shell before starting Codex, or use the
 direct installer below to persist the key in Codex's MCP config.
 

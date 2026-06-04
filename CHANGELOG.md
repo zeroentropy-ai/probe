@@ -2,6 +2,13 @@
 
 All notable changes to probe are documented here.
 
+## 0.4.10 — 2026-06-04
+
+### Changed
+- Claude Code and Codex `use-probe` skills now more clearly tell agents to use
+  `probe_search` before broad `grep`/`find` sweeps when exploring architecture,
+  behavior, or implementation details.
+
 ## 0.4.9 — 2026-06-02
 
 ### Fixed
