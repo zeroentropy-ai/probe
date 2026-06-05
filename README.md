@@ -1,52 +1,67 @@
 # probe
 
-**Fast project context for AI coding agents.**
+**Give your coding agent a brain beyond code.**
 
 [![CI](https://github.com/zeroentropy-ai/probe/actions/workflows/ci.yml/badge.svg)](https://github.com/zeroentropy-ai/probe/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/probe-search.svg)](https://pypi.org/project/probe-search/)
-[![Python](https://img.shields.io/pypi/pyversions/probe-search.svg)](https://pypi.org/project/probe-search/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-probe indexes your repo's docs and code, then gives Claude Code, Codex, and
-other MCP agents a ranked search tool for project knowledge.
+probe gives Claude Code, Codex, and any MCP agent semantic search over your
+repo's code and docs — so it finds the right context by *meaning*, not keywords,
+and stops guessing.
 
-## Contents
+## Why it matters
 
-- [Quick Start](#quick-start)
-- [Claude Code](#claude-code)
-- [Codex](#codex)
-- [CLI and MCP](#cli-and-mcp)
-- [Indexing](#indexing)
-- [Commands](#commands)
-- [Configuration](#configuration)
-- [Data Handling](#data-handling)
+When your agent explores a codebase with `grep`, it only matches exact strings:
+
+- It finds `getUser`, but misses the `fetch_account` that does the real work —
+  so it never reads the code that matters.
+- To "look around," it reloads whole files, burning its context window on noise.
+- With no ranking, it grabs the first plausible match and hallucinates the rest.
+
+probe returns ranked `file:line` references by meaning, auto-refreshed on every
+search, so your agent reads the right code the first time.
+
+## Results
+
+We ran an agent (Claude Sonnet 4.6) on 8 real-world coding tasks, with and
+without probe. With probe, the agent used it for all code exploration.
+
+| | With probe | Without |
+|---|---|---|
+| Avg. test-pass rate | **93.1%** | 84.1% |
+| `eicrud` (a hard task) | **100% — cracked it** | 44% |
+
+probe lifted the average test-pass rate by ~9 points and cracked a task the
+baseline couldn't. The honest tradeoff: it used **~39% more tokens**, because
+search results stay in the agent's context across turns — probe's own
+embedding/rerank API was negligible (**$0.80** across all 8 tasks).
+
+<sub>Source: ZeroEntropy internal benchmark — 8 tasks graded to completion, Sonnet 4.6, seed 0.</sub>
+
+## See it in action
+
+<!-- TODO(GTM): embed Dilawar's videos (probe vs plain Claude Code). Need the links. -->
+_Walkthrough videos coming soon._
 
 ## Quick Start
 
-Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>.
-
-### Claude Code
-
-Run this inside Claude Code:
+Get a free ZeroEntropy API key at <https://dashboard.zeroentropy.dev>, then, in
+Claude Code:
 
 ```text
 /plugin marketplace add https://github.com/zeroentropy-ai/probe.git
 /plugin install probe@zeroentropy
-/reload-plugins
 ```
 
-Claude Code asks for your ZeroEntropy API key during install. The plugin starts
-probe with `uvx --from probe-search==0.4.10 probe mcp`, so you do not need to
-install probe separately.
+Claude Code asks for your key during install and runs probe for you — nothing to
+install separately. Ask a question about your repo and probe auto-indexes on the
+first search.
 
-Use the HTTPS URL above. The `zeroentropy-ai/probe` shorthand makes Claude Code
-clone over SSH, which requires a configured GitHub SSH key. The Claude Code
-slash command treats `--sparse` as part of the URL, so do not pass sparse
-checkout options there.
+<details>
+<summary><b>Codex, CLI-only, and other MCP agents</b></summary>
 
 ### Codex
-
-Run this from a shell:
 
 ```bash
 codex plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .agents/plugins --sparse plugins/probe-codex
@@ -54,78 +69,31 @@ codex plugin add probe@zeroentropy
 export ZEROENTROPY_API_KEY="ze_xxx"
 ```
 
-The Codex plugin starts probe with `uvx --from probe-search==0.4.10 probe mcp`.
-Keep `ZEROENTROPY_API_KEY` in your shell before starting Codex, or use the
-direct installer below to persist the key in Codex's MCP config.
-
-For Codex auto-review, run this once:
+For Codex auto-review:
 
 ```bash
 uv tool install probe-search
 probe install --client codex --approve-tools --allow-zeroentropy-network
 ```
 
-This pre-approves probe's MCP tools and allows the narrow ZeroEntropy network
-egress Codex needs for indexing and reranking.
-
-## Plugin Install From A Shell
-
-If you prefer shell commands, probe can install the plugin and direct MCP entry
-for you:
-
-```bash
-uv tool install probe-search
-
-probe install --client claude --plugin --api-key "$ZEROENTROPY_API_KEY"
-probe install --client codex --plugin --api-key "$ZEROENTROPY_API_KEY" --approve-tools --allow-zeroentropy-network
-```
-
-If you use the `claude plugin install` shell command directly, pass the plugin
-config explicitly:
-
-```bash
-claude plugin marketplace add https://github.com/zeroentropy-ai/probe.git --sparse .claude-plugin plugins
-claude plugin install --config zeroentropy_api_key="$ZEROENTROPY_API_KEY" probe@zeroentropy
-```
-
-If Claude says `--config not applied`, open Claude Code and run
-`/plugin configure probe@zeroentropy`, or use `probe install --client claude
---plugin --api-key "$ZEROENTROPY_API_KEY"` so the direct MCP entry also has the
-key.
-
-## CLI and MCP
-
-For CLI-only use:
+### CLI only
 
 ```bash
 pip install probe-search
 export ZEROENTROPY_API_KEY="ze_xxx"
-
 probe index .
 probe search "how does authentication work"
 ```
 
-For direct Claude Code or Codex MCP registration:
+### Direct MCP registration
 
 ```bash
 uv tool install probe-search
 export ZEROENTROPY_API_KEY="ze_xxx"
-
-probe install --client claude
-probe install --client codex
+probe install --client claude   # or: --client codex
 ```
 
-`probe install` registers direct MCP by default. It installs the Claude Code or
-Codex plugin only when you pass `--plugin`.
-
-For custom Codex installs:
-
-```bash
-probe install --client codex --codex-home ~/.codex-work --codex-bin /path/to/codex
-probe doctor --codex-home ~/.codex-work --codex-bin /path/to/codex
-```
-
-For another MCP-compatible agent, add this to `.mcp.json`:
+For any other MCP client, add to `.mcp.json`:
 
 ```json
 {
@@ -133,9 +101,7 @@ For another MCP-compatible agent, add this to `.mcp.json`:
     "probe": {
       "command": "uvx",
       "args": ["--from", "probe-search", "probe", "mcp"],
-      "env": {
-        "ZEROENTROPY_API_KEY": "ze_xxx"
-      }
+      "env": { "ZEROENTROPY_API_KEY": "ze_xxx" }
     }
   }
 }
@@ -143,6 +109,18 @@ For another MCP-compatible agent, add this to `.mcp.json`:
 
 Start probe from the project root, or set the MCP server working directory to
 the project root. Claude Code sets `CLAUDE_PROJECT_DIR` automatically.
+
+</details>
+
+## How It Works
+
+1. probe chunks files with section, symbol, page, and line metadata.
+2. It retrieves candidates with semantic vector search and SQLite FTS5.
+3. It fuses and reranks results with ZeroEntropy `zerank-2`.
+4. It returns focused file, section, and line references to the agent.
+
+Hybrid retrieval plus cross-encoder reranking is why probe surfaces the code that
+keyword search walks right past.
 
 ## Verify Setup
 
@@ -180,13 +158,6 @@ If a file cannot be extracted or embedded, probe skips that file, reports it,
 and continues indexing the rest of the repo. Existing chunks for that file stay
 in place until the replacement chunks have been embedded successfully.
 
-## How Search Works
-
-1. probe chunks files with section, symbol, page, and line metadata.
-2. It retrieves candidates with semantic vector search and SQLite FTS5.
-3. It fuses and reranks results with ZeroEntropy `zerank-2`.
-4. It returns focused file, section, and line references to the agent.
-
 ## MCP Tools
 
 | Tool | Purpose |
@@ -200,6 +171,9 @@ MCP resources include `probe://status`, `probe://files`, and
 `probe://file/{path}`.
 
 ## Commands
+
+<details>
+<summary><b>All commands</b></summary>
 
 | Command | Description |
 |---------|-------------|
@@ -232,7 +206,12 @@ probe doctor --json
 probe smoke --json
 ```
 
+</details>
+
 ## Configuration
+
+<details>
+<summary><b>Configuration reference</b></summary>
 
 probe stores its index and config in `.probe/` at the project root. Add
 `.probe/` to `.gitignore`.
@@ -258,6 +237,8 @@ Useful environment variables:
 | `PROBE_EMBED_BATCH_MAX_CHUNKS` | `96` | Maximum chunks per embedding request |
 | `PROBE_EMBED_BATCH_MAX_BYTES` | `4500000` | Maximum UTF-8 payload bytes per embedding request |
 | `PROBE_INDEX_SECRET_FILES` | unset | Set to `1` to opt into indexing likely secret files |
+
+</details>
 
 ## Data Handling
 
